@@ -1,5 +1,12 @@
 export type ArtifactType = 'file' | 'image' | 'link' | 'pcap' | 'code' | 'log';
 
+export type CanonicalVerdict =
+  | 'malicious'
+  | 'benign'
+  | 'suspicious'
+  | 'unknown'
+  | 'analysis_unavailable';
+
 /**
  * A single evidence-backed sub-finding: never a bare verdict. Every claim
  * an agent makes should be traceable to where it came from and how
@@ -20,7 +27,8 @@ export interface AgentFinding {
   agentName: string;
   status: 'pending' | 'analyzing' | 'complete';
   stepProgress: number;
-  verdict?: 'Malicious' | 'Suspicious' | 'Safe' | 'Informational' | 'Insufficient Evidence' | 'Not Applicable';
+  verdict?: 'Malicious' | 'Suspicious' | 'Safe' | 'Informational' | 'Insufficient Evidence' | 'Not Applicable' | CanonicalVerdict;
+  canonicalVerdict?: CanonicalVerdict;
   maliciousScore?: number;
   summary?: string;
   completedAt?: string;
@@ -470,6 +478,7 @@ export interface MalwareVerdictResult {
   modelConfidence?: number | null;
   modelVersion?: string | null;
   observedCharacteristics: string[];
+  suspiciousImports?: string[];
   ruleMatches: MalwareRuleMatch[];
   similarSamples: MalwareSimilarityMatch[];
   likelyFamily?: string | null;
@@ -764,4 +773,6 @@ export interface ExtractedIOC {
   roleEvidence?: string;
   firstSeen?: string;
   lastSeen?: string;
+  occurrences?: number;
+  locations?: string[];
 }

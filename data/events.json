@@ -1,0 +1,94 @@
+{
+  "inv-case-1790249935075": [
+    {
+      "event_id": "evt-1790249935077-1",
+      "investigation_id": "inv-case-1790249935075",
+      "agent_id": "system",
+      "agent_name": "Evidence Intake",
+      "type": "STAGE_CHANGED",
+      "status": "RECEIVED",
+      "message": "Evidence received: Evidence package registered in immutable store.",
+      "timestamp": "2026-09-24T11:38:47.077Z"
+    },
+    {
+      "event_id": "evt-1790249935077-2",
+      "investigation_id": "inv-case-1790249935075",
+      "agent_id": "system",
+      "agent_name": "Fingerprint Engine",
+      "type": "HASH_CALCULATED",
+      "status": "VALIDATING",
+      "message": "Hash calculated: SHA256: 5f428e084fe4097d..., MD5: ecbcf7d19e3f6fed..., SHA1: 6bd3afdb731b5141...",
+      "timestamp": "2026-09-24T11:38:48.077Z"
+    },
+    {
+      "event_id": "evt-1790249935077-3",
+      "investigation_id": "inv-case-1790249935075",
+      "agent_id": "malware-analysis",
+      "agent_name": "Static Analyzer",
+      "type": "STAGE_CHANGED",
+      "status": "ANALYZING",
+      "message": "Static analysis started: Extracting strings, PE headers, imports, entropy, and structural metadata.",
+      "timestamp": "2026-09-24T11:38:49.077Z"
+    },
+    {
+      "event_id": "evt-1790249935077-4",
+      "investigation_id": "inv-case-1790249935075",
+      "agent_id": "ioc-extraction",
+      "agent_name": "IOC Extraction",
+      "type": "IOC_DISCOVERED",
+      "status": "ANALYZING",
+      "message": "IOC discovered: Extracted 1 indicators with line-level provenance.",
+      "timestamp": "2026-09-24T11:38:50.077Z"
+    },
+    {
+      "event_id": "evt-1790249935077-5",
+      "investigation_id": "inv-case-1790249935075",
+      "agent_id": "malware-analysis",
+      "agent_name": "Malware Analysis",
+      "type": "STAGE_CHANGED",
+      "status": "ANALYZING",
+      "message": "Malware analysis started: Evaluating opcode heuristics, signatures, and injection APIs.",
+      "timestamp": "2026-09-24T11:38:51.077Z"
+    },
+    {
+      "event_id": "evt-1790249935077-6",
+      "investigation_id": "inv-case-1790249935075",
+      "agent_id": "threat-intel",
+      "agent_name": "Threat Intelligence",
+      "type": "THREAT_INTEL_LOOKUP",
+      "status": "ANALYZING",
+      "message": "Threat-intel lookup: Queried VirusTotal, AbuseIPDB, and AlienVault OTX for indicator reputation.",
+      "timestamp": "2026-09-24T11:38:52.077Z"
+    },
+    {
+      "event_id": "evt-1790249935077-7",
+      "investigation_id": "inv-case-1790249935075",
+      "agent_id": "specialists",
+      "agent_name": "Specialist Agents",
+      "type": "FINDING_RECORDED",
+      "status": "ANALYZING",
+      "message": "Agent finding: Specialist fleet produced 6 structured, evidence-backed findings.",
+      "timestamp": "2026-09-24T11:38:53.077Z"
+    },
+    {
+      "event_id": "evt-1790249935077-8",
+      "investigation_id": "inv-case-1790249935075",
+      "agent_id": "verification-agent",
+      "agent_name": "Verification Agent",
+      "type": "STAGE_CHANGED",
+      "status": "VERIFYING",
+      "message": "Verification: Cross-checked specialist claims, validated evidence provenance, and generated verification matrix.",
+      "timestamp": "2026-09-24T11:38:54.077Z"
+    },
+    {
+      "event_id": "evt-1790249935077-9",
+      "investigation_id": "inv-case-1790249935075",
+      "agent_id": "report-generator",
+      "agent_name": "Report Generator",
+      "type": "STAGE_CHANGED",
+      "status": "COMPLETED",
+      "message": "Final report: Investigation Report compiled and sealed with MITRE ATT&CK techniques and containment directives.",
+      "timestamp": "2026-09-24T11:38:55.077Z"
+    }
+  ]
+}

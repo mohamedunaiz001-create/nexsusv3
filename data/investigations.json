@@ -1,0 +1,521 @@
+[
+  {
+    "id": "inv-case-1790249935075",
+    "caseNumber": "INV-2026-7885",
+    "title": "Cobalt Strike Beacon Ingress Analysis",
+    "status": "COMPLETED",
+    "severity": "Critical",
+    "confidence": 90,
+    "assignedAgent": "Malware Analysis",
+    "evidencePackage": {
+      "investigation_id": "INV-2026-7885",
+      "evidence_id": "ev-inv-case-1790249935075",
+      "file": {
+        "name": "beacon_stage2.exe",
+        "sha256": "5f428e084fe4097d9fd2fcb8f4869065ebc9aa9c62be552819ef8559f9f083ff",
+        "mime_type": "application/octet-stream",
+        "size": 106
+      },
+      "available_artifacts": {
+        "strings": [
+          "ReflectiveLoader VirtualAllocEx CreateRemoteThread c2-relay-vault.darknet-nexus.org:8443 beacon_stage2.exe"
+        ],
+        "network_connections": [],
+        "urls": [],
+        "domains": [
+          "c2-relay-vault.darknet-nexus.org"
+        ],
+        "ips": [],
+        "hashes": [
+          "5f428e084fe4097d9fd2fcb8f4869065ebc9aa9c62be552819ef8559f9f083ff",
+          "6bd3afdb731b514158b77fab7bd72d5d0a8e4b0a",
+          "ecbcf7d19e3f6fede32321aaebf6547f"
+        ],
+        "registry": [],
+        "processes": [],
+        "files": [
+          "beacon_stage2.exe"
+        ]
+      }
+    },
+    "agentFindings": [
+      {
+        "agentId": "malware-analysis",
+        "agentName": "Malware Analysis",
+        "status": "complete",
+        "verdict": "Malicious",
+        "maliciousScore": 88,
+        "confidence": 0.9,
+        "summary": "Automated static malware triage completed for beacon_stage2.exe. Discovered 3 cryptographic hashes and structural execution indicators.",
+        "findings": [
+          {
+            "claim": "Executable payload structure verified",
+            "evidence": "SHA256: 5f428e084fe4097d9fd2fcb8f4869065ebc9aa9c62be552819ef8559f9f083ff",
+            "source": "malware.fingerprint",
+            "confidence": 0.99,
+            "evidenceType": "DIRECT",
+            "location": "file header"
+          }
+        ]
+      },
+      {
+        "agentId": "ioc-extraction",
+        "agentName": "IOC Extraction",
+        "status": "complete",
+        "verdict": "Malicious",
+        "maliciousScore": 85,
+        "confidence": 0.92,
+        "summary": "Extracted 0 IP(s), 1 domain(s), 0 URL(s), and 0 registry entries with exact line source locations.",
+        "findings": []
+      },
+      {
+        "agentId": "network-analysis",
+        "agentName": "Network Analysis",
+        "status": "complete",
+        "verdict": "Informational",
+        "maliciousScore": 20,
+        "confidence": 0.8,
+        "summary": "No network capture attached; analyzed static strings for socket APIs and host references.",
+        "findings": []
+      },
+      {
+        "agentId": "threat-intel",
+        "agentName": "Threat Intelligence",
+        "status": "complete",
+        "verdict": "Malicious",
+        "maliciousScore": 85,
+        "confidence": 0.88,
+        "summary": "Queried tool gateway for 1 indicators. Cross-referenced VirusTotal, AbuseIPDB, and AlienVault OTX.",
+        "findings": []
+      },
+      {
+        "agentId": "memory-agent",
+        "agentName": "Memory Analysis",
+        "status": "complete",
+        "verdict": "Not Applicable",
+        "confidence": 1,
+        "summary": "Memory Analysis: NOT APPLICABLE.\nReason: Uploaded evidence is a static file (beacon_stage2.exe) and contains no memory dump or process snapshot.\nRequired evidence:\n- memory dump (.raw, .dmp, .vmem)\n- process dump\n- live memory acquisition\nConclusion: No memory-forensic conclusion was attempted.",
+        "findings": [
+          {
+            "claim": "Forensic memory scope preflight evaluation",
+            "evidence": "Evidence \"beacon_stage2.exe\" contains no volatile physical RAM or handle structures.",
+            "source": "forensics.memory.preflight",
+            "confidence": 1,
+            "evidenceType": "DIRECT",
+            "limitation": "No memory-forensic conclusion was attempted."
+          }
+        ],
+        "evidenceGaps": [
+          "Requires volatile memory acquisition image or crash dump (.dmp, .raw) to extract injected DLLs or unlinked VAD structures."
+        ]
+      },
+      {
+        "agentId": "verification-agent",
+        "agentName": "Verification Agent",
+        "status": "complete",
+        "verdict": "Informational",
+        "confidence": 0.9,
+        "summary": "Cross-validated all specialist findings. Checked claims against evidence strings and confirmed absence of contradictory agent verdicts.",
+        "findings": [
+          {
+            "claim": "Specialist verdicts are consistent",
+            "evidence": "Scoring specialists agree on malicious direction without contradictory Clean/Safe verdicts.",
+            "source": "verification.cross_check",
+            "confidence": 0.9,
+            "evidenceType": "DIRECT"
+          }
+        ]
+      }
+    ],
+    "correlatedFindings": [
+      {
+        "id": "corr-1",
+        "indicatorOrClaim": "c2-relay-vault.darknet-nexus.org",
+        "type": "domain",
+        "confidence": 0.92,
+        "evidenceChecklist": [
+          {
+            "label": "Embedded in sample",
+            "checked": true,
+            "source": "IOC Extraction (Static Strings)"
+          },
+          {
+            "label": "Observed in network traffic/context",
+            "checked": true,
+            "source": "Network Forensics"
+          },
+          {
+            "label": "Threat intelligence match",
+            "checked": true,
+            "source": "Multi-Tool Gateway"
+          },
+          {
+            "label": "Identified in script/code execution chain",
+            "checked": true,
+            "source": "Code/AST Review"
+          }
+        ],
+        "status": "HIGH",
+        "contributingAgents": [
+          "ioc-extraction",
+          "network-analysis",
+          "threat-intel",
+          "malware-analysis"
+        ],
+        "timestamp": "2026-09-24T11:38:55.077Z"
+      }
+    ],
+    "verificationMatrix": [
+      {
+        "claim": "Executable payload structure verified",
+        "evidenceCheck": "Verified: SHA256: 5f428e084fe4097d9fd2fcb8f4869065ebc9aa9c62be552819ef8559f9f083ff",
+        "sourceCheck": "Confirmed provenance: malware.fingerprint",
+        "agentAgreement": "Malware Analysis (confidence: 99%)",
+        "contradictionCheck": "No contradiction identified across active agents",
+        "confidence": 0.99,
+        "status": "VERIFIED",
+        "evaluatedAt": "2026-09-24T11:38:55.077Z"
+      },
+      {
+        "claim": "Forensic memory scope preflight evaluation",
+        "evidenceCheck": "Verified: Evidence \"beacon_stage2.exe\" contains no volatile physical RAM or handle structures.",
+        "sourceCheck": "Confirmed provenance: forensics.memory.preflight",
+        "agentAgreement": "Memory Analysis (confidence: 100%)",
+        "contradictionCheck": "No contradiction identified across active agents",
+        "confidence": 1,
+        "status": "VERIFIED",
+        "evaluatedAt": "2026-09-24T11:38:55.077Z"
+      },
+      {
+        "claim": "Specialist verdicts are consistent",
+        "evidenceCheck": "Verified: Scoring specialists agree on malicious direction without contradictory Clean/Safe verdicts.",
+        "sourceCheck": "Confirmed provenance: verification.cross_check",
+        "agentAgreement": "Verification Agent (confidence: 90%)",
+        "contradictionCheck": "No contradiction identified across active agents",
+        "confidence": 0.9,
+        "status": "VERIFIED",
+        "evaluatedAt": "2026-09-24T11:38:55.077Z"
+      }
+    ],
+    "mitreAttackTechniques": [
+      "T1059.001 (PowerShell Execution)",
+      "T1071.001 (Web Protocols)",
+      "T1547.001 (Registry Persistence)",
+      "T1027 (Obfuscated Files or Information)"
+    ],
+    "reportSummary": "Investigation INV-2026-7885 concluded with verdict: MALICIOUS (90% confidence). Evaluated 1 indicators across 6 specialist agents with verified evidence provenance.",
+    "createdAt": "2026-09-24T11:38:55.077Z",
+    "updatedAt": "2026-09-24T11:38:55.077Z"
+  },
+  {
+    "id": "inv-case-8941",
+    "caseNumber": "INV-2026-8941",
+    "title": "Cobalt Strike HTTPS Beacon & Encrypted Shellcode Stager",
+    "status": "COMPLETED",
+    "severity": "Critical",
+    "confidence": 94,
+    "assignedAgent": "Malware Analysis",
+    "createdAt": "2026-09-24T02:15:00.000Z",
+    "updatedAt": "2026-09-24T02:22:00.000Z",
+    "evidencePackage": {
+      "investigation_id": "INV-2026-8941",
+      "evidence_id": "art-8941-a",
+      "file": {
+        "name": "beacon_stage2.bin",
+        "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "mime_type": "application/octet-stream",
+        "size": 262144
+      },
+      "available_artifacts": {
+        "strings": [
+          "ReflectiveLoader",
+          "VirtualAllocEx",
+          "beacon.dll",
+          "C2_HEARTBEAT",
+          "185.220.101.44",
+          "update-windows-defender.online",
+          "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"
+        ],
+        "pe_headers": {
+          "sections": [
+            ".text",
+            ".rdata",
+            ".data",
+            ".reloc"
+          ],
+          "importedDlls": [
+            "KERNEL32.dll",
+            "WININET.dll",
+            "ADVAPI32.dll"
+          ],
+          "suspiciousApis": [
+            "VirtualAlloc",
+            "WriteProcessMemory",
+            "CreateRemoteThread"
+          ]
+        },
+        "network_connections": [
+          "185.220.101.44:443",
+          "update-windows-defender.online:443"
+        ],
+        "urls": [
+          "https://update-windows-defender.online/en/check.php"
+        ],
+        "domains": [
+          "update-windows-defender.online"
+        ],
+        "ips": [
+          "185.220.101.44"
+        ],
+        "hashes": [
+          "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "6144:3f4a9b...:c91"
+        ],
+        "registry": [
+          "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\WinDefenderUpdate"
+        ],
+        "processes": [
+          "cmd.exe /c powershell -nop -w hidden -enc JABj..."
+        ],
+        "files": [
+          "C:\\Windows\\Temp\\beacon.dll",
+          "C:\\ProgramData\\updater.exe"
+        ]
+      }
+    },
+    "agentFindings": [
+      {
+        "agentId": "malware-analysis",
+        "agentName": "Malware Analysis",
+        "status": "complete",
+        "verdict": "Malicious",
+        "maliciousScore": 95,
+        "confidence": 0.95,
+        "summary": "Identified Cobalt Strike Beacon signature with Reflective DLL Injection capabilities. Imports memory injection APIs VirtualAlloc and CreateRemoteThread.",
+        "findings": [
+          {
+            "claim": "Reflective DLL Loader signature identified",
+            "evidence": "ReflectiveLoader export present at offset 0x14A0",
+            "source": "malware.reflective_loader",
+            "confidence": 0.98,
+            "evidenceType": "DIRECT",
+            "location": "offset 0x14A0"
+          },
+          {
+            "claim": "Process injection API imports present",
+            "evidence": "KERNEL32.dll!VirtualAllocEx, KERNEL32.dll!CreateRemoteThread",
+            "source": "pe.imports",
+            "confidence": 0.95,
+            "evidenceType": "DIRECT"
+          }
+        ]
+      },
+      {
+        "agentId": "ioc-extraction",
+        "agentName": "IOC Extraction",
+        "status": "complete",
+        "verdict": "Malicious",
+        "maliciousScore": 90,
+        "confidence": 0.92,
+        "summary": "Extracted 12 indicators: 2 C2 domains, 1 IPv4 address, 3 cryptographic hashes, 2 registry paths, and 1 execution cradle.",
+        "findings": [
+          {
+            "claim": "C2 Domain extracted with high confidence",
+            "evidence": "update-windows-defender.online",
+            "source": "static.strings",
+            "confidence": 0.96,
+            "evidenceType": "DIRECT",
+            "location": "strings (line 14)"
+          },
+          {
+            "claim": "C2 IPv4 address isolated",
+            "evidence": "185.220.101.44",
+            "source": "static.strings",
+            "confidence": 0.92,
+            "evidenceType": "DIRECT",
+            "location": "strings (line 19)"
+          }
+        ]
+      },
+      {
+        "agentId": "network-analysis",
+        "agentName": "Network Analysis",
+        "status": "complete",
+        "verdict": "Suspicious",
+        "maliciousScore": 75,
+        "confidence": 0.85,
+        "summary": "Static network primitives match TLS beaconing profile over port 443 with jitter intervals.",
+        "findings": [
+          {
+            "claim": "C2 HTTPS Beaconing endpoint verified in sample strings",
+            "evidence": "https://update-windows-defender.online/en/check.php:443",
+            "source": "network.strings",
+            "confidence": 0.88,
+            "evidenceType": "MEDIUM",
+            "limitation": "Static extraction identifies endpoint; live PCAP captures not attached."
+          }
+        ]
+      },
+      {
+        "agentId": "threat-intel",
+        "agentName": "Threat Intelligence",
+        "status": "complete",
+        "verdict": "Malicious",
+        "maliciousScore": 92,
+        "confidence": 0.94,
+        "summary": "AlienVault OTX & VirusTotal show IP 185.220.101.44 flagged as Tor exit node and known Cobalt Strike team server.",
+        "findings": [
+          {
+            "claim": "VirusTotal & OTX Malicious IP reputation",
+            "evidence": "185.220.101.44: Malicious (64/72 engines flagged as Cobalt Strike C2)",
+            "source": "external.virustotal.ip.lookup",
+            "confidence": 0.94,
+            "evidenceType": "DIRECT"
+          }
+        ]
+      },
+      {
+        "agentId": "memory-agent",
+        "agentName": "Memory Analysis",
+        "status": "complete",
+        "verdict": "Not Applicable",
+        "confidence": 1,
+        "summary": "Memory Analysis: NOT APPLICABLE.\nReason: Uploaded evidence is a PE executable and contains no memory dump or process snapshot.\nRequired evidence:\n- memory dump (.raw, .dmp, .vmem)\n- process dump\n- live memory acquisition\nConclusion: No memory-forensic conclusion was attempted.",
+        "findings": [
+          {
+            "claim": "Forensic memory scope preflight evaluation",
+            "evidence": "Artifact \"beacon_stage2.bin\" does not contain volatile physical memory pages, process handle tables, or virtual address descriptors.",
+            "source": "forensics.memory.preflight",
+            "confidence": 1,
+            "evidenceType": "DIRECT",
+            "limitation": "No memory-forensic conclusion was attempted."
+          }
+        ],
+        "evidenceGaps": [
+          "Requires volatile memory acquisition image or crash dump (.dmp, .raw) to extract injected DLLs, unlinked VAD structures, or in-memory shellcode."
+        ]
+      },
+      {
+        "agentId": "verification-agent",
+        "agentName": "Verification Agent",
+        "status": "complete",
+        "verdict": "Informational",
+        "confidence": 0.94,
+        "summary": "Cross-validated 5 specialist findings. Corroborated C2 IP 185.220.101.44 and domain across 4 independent sources without contradictions.",
+        "findings": [
+          {
+            "claim": "Specialist verdicts are consistent and corroborated",
+            "evidence": "Malware Analysis, IOC Extraction, Threat Intel, and Network Analysis agree on malicious orientation.",
+            "source": "verification.cross_check",
+            "confidence": 0.94,
+            "evidenceType": "DIRECT"
+          }
+        ]
+      }
+    ],
+    "correlatedFindings": [
+      {
+        "id": "corr-1",
+        "indicatorOrClaim": "update-windows-defender.online",
+        "type": "domain",
+        "confidence": 0.96,
+        "evidenceChecklist": [
+          {
+            "label": "Embedded in sample",
+            "checked": true,
+            "source": "IOC Extraction (Static Strings)"
+          },
+          {
+            "label": "Observed in network traffic/context",
+            "checked": true,
+            "source": "Network Forensics"
+          },
+          {
+            "label": "Threat intelligence match",
+            "checked": true,
+            "source": "Multi-Tool Gateway"
+          },
+          {
+            "label": "Identified in script/code execution chain",
+            "checked": false,
+            "source": "Code/AST Review"
+          }
+        ],
+        "status": "HIGH",
+        "contributingAgents": [
+          "ioc-extraction",
+          "network-analysis",
+          "threat-intel",
+          "malware-analysis"
+        ],
+        "timestamp": "2026-09-24T02:20:00.000Z"
+      },
+      {
+        "id": "corr-2",
+        "indicatorOrClaim": "185.220.101.44",
+        "type": "ipv4",
+        "confidence": 0.98,
+        "evidenceChecklist": [
+          {
+            "label": "Embedded in sample",
+            "checked": true,
+            "source": "IOC Extraction (Static Strings)"
+          },
+          {
+            "label": "Observed in network traffic/context",
+            "checked": true,
+            "source": "Network Forensics"
+          },
+          {
+            "label": "Threat intelligence match",
+            "checked": true,
+            "source": "Multi-Tool Gateway (VirusTotal)"
+          },
+          {
+            "label": "Identified in script/code execution chain",
+            "checked": false,
+            "source": "Code/AST Review"
+          }
+        ],
+        "status": "HIGH",
+        "contributingAgents": [
+          "ioc-extraction",
+          "network-analysis",
+          "threat-intel",
+          "malware-analysis"
+        ],
+        "timestamp": "2026-09-24T02:20:00.000Z"
+      }
+    ],
+    "verificationMatrix": [
+      {
+        "claim": "Reflective DLL Loader signature identified",
+        "evidenceCheck": "Verified: ReflectiveLoader export present at offset 0x14A0",
+        "sourceCheck": "Confirmed provenance: malware.reflective_loader",
+        "agentAgreement": "Malware Analysis (confidence: 98%)",
+        "contradictionCheck": "No contradiction identified across active agents",
+        "confidence": 0.98,
+        "status": "VERIFIED",
+        "evaluatedAt": "2026-09-24T02:21:00.000Z"
+      },
+      {
+        "claim": "VirusTotal & OTX Malicious IP reputation",
+        "evidenceCheck": "Verified: 185.220.101.44: Malicious (64/72 engines flagged as Cobalt Strike C2)",
+        "sourceCheck": "Confirmed provenance: external.virustotal.ip.lookup",
+        "agentAgreement": "Threat Intelligence (confidence: 94%)",
+        "contradictionCheck": "No contradiction identified across active agents",
+        "confidence": 0.94,
+        "status": "VERIFIED",
+        "evaluatedAt": "2026-09-24T02:21:00.000Z"
+      }
+    ],
+    "mitreAttackTechniques": [
+      "T1055.001 (Reflective DLL Injection)",
+      "T1071.001 (Web Protocols)",
+      "T1547.001 (Registry Run Keys)",
+      "T1059.001 (PowerShell)"
+    ],
+    "reportSummary": "Investigation confirmed active Cobalt Strike deployment with reflective injection, persistence via Registry Run key, and active C2 beaconing to 185.220.101.44."
+  }
+]

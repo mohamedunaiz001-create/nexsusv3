@@ -333,6 +333,69 @@ export default function App() {
     initializeSession();
   }, []);
 
+  // Sync real backend investigation cases and live activity stream
+  useEffect(() => {
+    let cancelled = false;
+    const syncBackendInvestigationState = async () => {
+      try {
+        const [liveRes, casesRes] = await Promise.all([
+          secureFetchWithRecovery('/api/investigations/live-activity'),
+          secureFetchWithRecovery('/api/investigations'),
+        ]);
+
+        if (!cancelled && liveRes.ok) {
+          const liveData = await liveRes.json();
+          if (Array.isArray(liveData.activities) && liveData.activities.length > 0) {
+            setActivities(liveData.activities);
+          }
+        }
+
+        if (!cancelled && casesRes.ok) {
+          const casesData = await casesRes.json();
+          if (Array.isArray(casesData.investigations) && casesData.investigations.length > 0) {
+            const mappedCases = casesData.investigations.map((inv: any) => ({
+              id: inv.id,
+              caseNumber: inv.caseNumber,
+              title: inv.title,
+              severity: inv.severity || 'HIGH',
+              status: inv.status || 'COMPLETED',
+              assignedAgent: inv.assignedAgent || 'ARCHON',
+              confidence: inv.confidence || 90,
+              time: new Date(inv.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              lead: inv.assignedAgent || 'ARCHON',
+              indicatorsCount: (inv.evidencePackage?.available_artifacts?.ips?.length || 0) + (inv.evidencePackage?.available_artifacts?.domains?.length || 0) + (inv.evidencePackage?.available_artifacts?.urls?.length || 0) || 6,
+              progress: inv.status === 'COMPLETED' ? 100 : 75,
+              reportSummary: inv.reportSummary,
+              agentFindings: inv.agentFindings,
+              correlatedFindings: inv.correlatedFindings,
+              verificationMatrix: inv.verificationMatrix,
+              mitreAttackTechniques: inv.mitreAttackTechniques,
+            }));
+
+            setCases((prev) => {
+              const result = [...mappedCases];
+              prev.forEach((existing) => {
+                if (!result.some((r) => r.id === existing.id || r.caseNumber === existing.caseNumber)) {
+                  result.push(existing);
+                }
+              });
+              return result;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Backend investigation sync paused', err);
+      }
+    };
+
+    syncBackendInvestigationState();
+    const interval = setInterval(syncBackendInvestigationState, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   // --- Live investigation heartbeat -----------------------------------
   // Keeps ref mirrors of `agents` / `artifacts` so the interval below always
   // reads the latest state without needing to be re-created on every update.

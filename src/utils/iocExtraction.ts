@@ -382,9 +382,38 @@ const DETECTORS: Detector[] = [
     confidence: 0.92,
   },
   {
+    type: 'c2_indicator',
+    re: /\b(?:c2|beacon|callback|payload)(?:_server|_host|_domain|_ip)?\s*[:=]\s*["']?([^\s"';]+)["']?/gi,
+    confidence: 0.94,
+  },
+  {
+    type: 'encryption_key_artifact',
+    re: /\b(?:encryption_key|rc4_key|aes_key|xor_key|private_key|secret_key)\s*[:=]\s*["']?([A-Za-z0-9+/=_\-]{16,128})["']?/gi,
+    confidence: 0.95,
+  },
+  {
     type: 'campaign_id',
     re: /\b(?:campaign|camp_id|op_name|operation)\s*[:=]\s*["']?([A-Za-z0-9_\-]{3,32})["']?/gi,
     confidence: 0.88,
+  },
+
+  // Executable / Script Filenames
+  {
+    type: 'filename',
+    re: /\b[A-Za-z0-9_\-]{3,64}\.(?:exe|dll|sys|ps1|bat|cmd|vbs|js|vbe|scr|elf|so|dylib|bin|sh|msc|cpl)\b/gi,
+    confidence: 0.85,
+    validate: (v) => !v.endsWith('.ts') && !v.endsWith('.tsx') && !v.endsWith('.json'),
+  },
+
+  // Ports (colon prefixed or preceded by port keyword)
+  {
+    type: 'port',
+    re: /(?::|\bport\s+)([1-9][0-9]{1,4})\b/gi,
+    confidence: 0.82,
+    validate: (v) => {
+      const p = parseInt(v.replace(/^[^\d]+/, ''), 10);
+      return p >= 1 && p <= 65535 && !(p >= 2020 && p <= 2030);
+    },
   },
 
   // Windows Filesystem Paths
@@ -470,12 +499,13 @@ function extractFromText(text: string, source: string): ExtractedIOC[] {
         const roleInfo = inferRoleAndEvidence(context, det.type);
         const calibratedConfidence = Math.max(0.1, Math.min(1.0, det.confidence + roleInfo.confidenceAdjustment));
 
+        const initialLocation = `${source} (line ${lineNumber})`;
         out.push({
           type: det.type,
           value: rawValue,
           normalizedValue: normalizedValue !== rawValue ? normalizedValue : undefined,
           source,
-          location: `${source} (line ${lineNumber})`,
+          location: initialLocation,
           lineNumber,
           context,
           category: inferCategory(det.type),
@@ -484,6 +514,8 @@ function extractFromText(text: string, source: string): ExtractedIOC[] {
           role: roleInfo.role,
           roleEvidence: roleInfo.roleEvidence,
           firstSeen: new Date().toISOString(),
+          occurrences: 1,
+          locations: [initialLocation],
         });
         if (out.length > 500) return out;
       }
@@ -494,8 +526,25 @@ function extractFromText(text: string, source: string): ExtractedIOC[] {
   for (const ioc of out) {
     const key = `${ioc.type}:${(ioc.normalizedValue || ioc.value).toLowerCase()}`;
     const existing = deduped.get(key);
-    if (!existing || ioc.confidence > existing.confidence) {
-      deduped.set(key, ioc);
+    if (existing) {
+      existing.occurrences = (existing.occurrences || 1) + 1;
+      if (!existing.locations) existing.locations = [existing.location || existing.source];
+      if (ioc.location && !existing.locations.includes(ioc.location)) {
+        existing.locations.push(ioc.location);
+      }
+      if (ioc.confidence > existing.confidence) {
+        existing.confidence = ioc.confidence;
+        existing.role = ioc.role || existing.role;
+        existing.roleEvidence = ioc.roleEvidence || existing.roleEvidence;
+        existing.context = ioc.context || existing.context;
+        existing.location = ioc.location || existing.location;
+      }
+    } else {
+      deduped.set(key, {
+        ...ioc,
+        occurrences: 1,
+        locations: ioc.location ? [ioc.location] : [ioc.source],
+      });
     }
   }
 
@@ -524,16 +573,99 @@ export function extractIOCs(input: IOCExtractionInput): ExtractedIOC[] {
     found.push(...extractFromText(suspicious.join('\n'), 'static analysis: suspicious strings'));
   }
 
-  // De-dupe by type+value, keeping the highest-confidence / richest provenance.
+  // De-dupe by type+value, accumulating occurrences & locations while preserving distinct indicators
   const byKey = new Map<string, ExtractedIOC>();
   for (const ioc of found) {
     const key = `${ioc.type}:${(ioc.normalizedValue || ioc.value).toLowerCase()}`;
     const existing = byKey.get(key);
-    if (!existing || ioc.confidence > existing.confidence) {
-      byKey.set(key, ioc);
+    if (existing) {
+      existing.occurrences = (existing.occurrences || 1) + (ioc.occurrences || 1);
+      if (!existing.locations) existing.locations = [existing.location || existing.source];
+      if (ioc.locations) {
+        for (const loc of ioc.locations) {
+          if (!existing.locations.includes(loc)) existing.locations.push(loc);
+        }
+      } else if (ioc.location && !existing.locations.includes(ioc.location)) {
+        existing.locations.push(ioc.location);
+      }
+      if (ioc.confidence > existing.confidence) {
+        existing.confidence = ioc.confidence;
+        existing.role = ioc.role || existing.role;
+        existing.roleEvidence = ioc.roleEvidence || existing.roleEvidence;
+        existing.context = ioc.context || existing.context;
+      }
+    } else {
+      byKey.set(key, {
+        ...ioc,
+        occurrences: ioc.occurrences || 1,
+        locations: ioc.locations && ioc.locations.length > 0 ? ioc.locations : [ioc.location || ioc.source],
+      });
     }
   }
   return Array.from(byKey.values());
+}
+
+export interface IOCRecallResult {
+  totalGroundTruth: number;
+  discoveredCount: number;
+  missedCount: number;
+  recallRate: number; // 0 - 1
+  provenanceVerifiedCount: number;
+  provenanceRate: number; // 0 - 1
+  discovered: { type: string; value: string; location?: string; confidence: number }[];
+  missed: { type: string; value: string }[];
+}
+
+export function evaluateIOCRecall(
+  sampleText: string,
+  groundTruth: { type: ExtractedIOCType | string; value: string }[],
+): IOCRecallResult {
+  const extracted = extractIOCs({ previewContent: sampleText });
+  const discovered: { type: string; value: string; location?: string; confidence: number }[] = [];
+  const missed: { type: string; value: string }[] = [];
+  let provenanceVerified = 0;
+
+  const clean = (s: string) => s.toLowerCase().replace(/\\+/g, '/').replace(/["'=\s]/g, '').trim();
+
+  for (const gt of groundTruth) {
+    const gtVal = clean(gt.value || '');
+    const match = extracted.find((e) => {
+      const typeMatch = e.type === gt.type || e.type.includes(gt.type) || gt.type.includes(e.type);
+      if (!typeMatch) return false;
+      const eNorm = clean(e.normalizedValue || '');
+      const eVal = clean(e.value || '');
+      return (eNorm && (eNorm === gtVal || eNorm.includes(gtVal) || gtVal.includes(eNorm))) ||
+             (eVal && (eVal === gtVal || eVal.includes(gtVal) || gtVal.includes(eVal)));
+    });
+
+    if (match) {
+      discovered.push({
+        type: match.type,
+        value: match.normalizedValue || match.value,
+        location: match.location,
+        confidence: match.confidence,
+      });
+      if (match.location && match.context && match.confidence > 0) {
+        provenanceVerified += 1;
+      }
+    } else {
+      missed.push(gt);
+    }
+  }
+
+  const recallRate = groundTruth.length > 0 ? Number((discovered.length / groundTruth.length).toFixed(3)) : 1.0;
+  const provenanceRate = discovered.length > 0 ? Number((provenanceVerified / discovered.length).toFixed(3)) : 1.0;
+
+  return {
+    totalGroundTruth: groundTruth.length,
+    discoveredCount: discovered.length,
+    missedCount: missed.length,
+    recallRate,
+    provenanceVerifiedCount: provenanceVerified,
+    provenanceRate,
+    discovered,
+    missed,
+  };
 }
 
 export function summarizeIOCsByType(iocs: ExtractedIOC[]): Record<string, number> {

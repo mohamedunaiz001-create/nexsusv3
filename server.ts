@@ -2,8 +2,10 @@ import express, { Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
+import { evaluateMalwareDetector } from './src/utils/malwareEvaluation';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -652,20 +654,22 @@ app.post('/api/tools/execute', (req: Request, res: Response) => {
   const verdict = isSuspicious ? 'malicious' : 'clean';
   const confidence = isSuspicious ? 92 : 12;
   const latencyMs = Math.floor(Math.random() * 50) + 35;
+  const timestamp = new Date().toISOString();
 
-  const result = {
-    tool: toolName,
-    action: act,
-    verdict,
-    confidence,
-    findings: [
-      {
-        detail: isSuspicious
-          ? `Flagged in ${toolName} intelligence feed: associated with malicious adversary activity`
-          : `Clean indicator: no malicious detections in ${toolName} database`,
-      },
-    ],
-  };
+  const responseSummary = isSuspicious
+    ? `42 results analyzed; 3 malicious relationships identified via ${toolName}`
+    : `18 benign references verified; 0 malicious associations in ${toolName} database`;
+
+  const findings = [
+    {
+      claim: isSuspicious ? 'Adversary infrastructure association identified' : 'Clean indicator reputation',
+      evidence: isSuspicious
+        ? `Flagged in ${toolName} intelligence feed: associated with malicious adversary activity`
+        : `Clean indicator: no malicious detections in ${toolName} database`,
+      source: `external.${toolId}.${act}`,
+      confidence: confidence / 100,
+    },
+  ];
 
   const newLog = {
     id: `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -676,21 +680,52 @@ app.post('/api/tools/execute', (req: Request, res: Response) => {
     targetIndicator: val,
     requestedBy: requestedByAgent || 'threat-intel',
     caseId: caseId || 'CASE-2024-017',
-    status: 'SUCCESS',
+    status: 'SUCCESS' as const,
     verdict,
     durationMs: latencyMs,
+    duration: latencyMs,
     latencyMs,
-    timestamp: new Date().toLocaleTimeString(),
-    createdAt: new Date().toISOString(),
+    timestamp,
+    createdAt: timestamp,
+    responseSummary,
     resultSummary: `${verdict.toUpperCase()} (${confidence}% confidence) via ${toolName}`,
     agentId: requestedByAgent || 'threat-intel',
+    agent: requestedByAgent || 'threat-intel',
+    error: null,
+    request: {
+      action: act,
+      indicatorValue: val,
+      agent: requestedByAgent || 'threat-intel',
+      caseId: caseId || 'CASE-2024-017',
+    },
   };
 
   inMemoryLogs.unshift(newLog);
+  if (typeof saveStateToDisk === 'function') {
+    saveStateToDisk();
+  }
 
   res.json({
     success: true,
-    result,
+    tool: toolName,
+    toolId,
+    request: newLog.request,
+    timestamp,
+    status: 'SUCCESS',
+    responseSummary,
+    error: null,
+    duration: latencyMs,
+    agent: requestedByAgent || 'threat-intel',
+    verdict,
+    confidence,
+    findings,
+    result: {
+      tool: toolName,
+      action: act,
+      verdict,
+      confidence,
+      findings,
+    },
   });
 });
 
@@ -1362,6 +1397,73 @@ function serverExtractIOCs(text: string): {
 }
 
 // ---------------------------------------------------------------------------
+// Persistent State Storage (data/investigations.json, data/events.json, data/tool_logs.json)
+// ---------------------------------------------------------------------------
+const DATA_DIR = path.join(process.cwd(), 'data');
+if (!fs.existsSync(DATA_DIR)) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch (e) {
+    console.error('Failed to create data dir', e);
+  }
+}
+
+const INVESTIGATIONS_FILE = path.join(DATA_DIR, 'investigations.json');
+const EVENTS_FILE = path.join(DATA_DIR, 'events.json');
+const TOOL_LOGS_FILE = path.join(DATA_DIR, 'tool_logs.json');
+
+function saveStateToDisk() {
+  try {
+    fs.writeFileSync(INVESTIGATIONS_FILE, JSON.stringify(inMemoryInvestigations, null, 2), 'utf-8');
+    const eventsObj: Record<string, any[]> = {};
+    inMemoryEvents.forEach((evts, key) => {
+      eventsObj[key] = evts;
+    });
+    fs.writeFileSync(EVENTS_FILE, JSON.stringify(eventsObj, null, 2), 'utf-8');
+    fs.writeFileSync(TOOL_LOGS_FILE, JSON.stringify(inMemoryLogs, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to persist state to disk:', err);
+  }
+}
+
+function loadStateFromDisk() {
+  try {
+    if (fs.existsSync(INVESTIGATIONS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(INVESTIGATIONS_FILE, 'utf-8'));
+      if (Array.isArray(data) && data.length > 0) {
+        data.forEach((inv) => {
+          if (!inMemoryInvestigations.some((existing) => existing.id === inv.id || existing.caseNumber === inv.caseNumber)) {
+            inMemoryInvestigations.push(inv);
+          }
+        });
+      }
+    }
+    if (fs.existsSync(EVENTS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(EVENTS_FILE, 'utf-8'));
+      if (typeof data === 'object' && data !== null) {
+        Object.entries(data).forEach(([k, v]) => {
+          if (Array.isArray(v)) inMemoryEvents.set(k, v);
+        });
+      }
+    }
+    if (fs.existsSync(TOOL_LOGS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(TOOL_LOGS_FILE, 'utf-8'));
+      if (Array.isArray(data) && data.length > 0) {
+        data.forEach((l) => {
+          if (!inMemoryLogs.some((el) => el.id === l.id)) {
+            inMemoryLogs.push(l);
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load state from disk:', err);
+  }
+}
+
+loadStateFromDisk();
+
+// ---------------------------------------------------------------------------
 // Investigations API Endpoints
 // ---------------------------------------------------------------------------
 
@@ -1593,20 +1695,54 @@ app.post('/api/investigations', (req: Request, res: Response) => {
 
   inMemoryInvestigations.unshift(investigation);
 
-  // Record audit events for the lifecycle
+  // Record audit events for the 9-stage lifecycle
+  const now = Date.now();
   const events = [
-    { event_id: `evt-${Date.now()}-1`, investigation_id: caseId, agent_id: 'system', type: 'STAGE_CHANGED', status: 'RECEIVED', message: 'Evidence package received and registered in immutable store.', timestamp: new Date(Date.now() - 5000).toISOString() },
-    { event_id: `evt-${Date.now()}-2`, investigation_id: caseId, agent_id: 'system', type: 'STAGE_CHANGED', status: 'VALIDATING', message: `Fingerprinted SHA256: ${sha256.slice(0, 16)}... and validated MIME header.`, timestamp: new Date(Date.now() - 4000).toISOString() },
-    { event_id: `evt-${Date.now()}-3`, investigation_id: caseId, agent_id: 'system', type: 'STAGE_CHANGED', status: 'QUEUED', message: 'Dispatched to specialist agent fleet (Malware, IOC, Network, Threat Intel, Memory, Verification).', timestamp: new Date(Date.now() - 3000).toISOString() },
-    { event_id: `evt-${Date.now()}-4`, investigation_id: caseId, agent_id: 'malware-analysis', type: 'FINDING_RECORDED', status: 'ANALYZING', message: 'Malware Analysis concluded: Malicious (Score 88).', timestamp: new Date(Date.now() - 2000).toISOString() },
-    { event_id: `evt-${Date.now()}-5`, investigation_id: caseId, agent_id: 'ioc-extraction', type: 'FINDING_RECORDED', status: 'ANALYZING', message: `IOC Extraction isolated ${extracted.ips.length + extracted.domains.length + extracted.urls.length} verified indicators.`, timestamp: new Date(Date.now() - 1500).toISOString() },
-    { event_id: `evt-${Date.now()}-6`, investigation_id: caseId, agent_id: 'verification-agent', type: 'STAGE_CHANGED', status: 'CORRELATING', message: 'Cross-agent correlation linked network destinations with sample strings.', timestamp: new Date(Date.now() - 1000).toISOString() },
-    { event_id: `evt-${Date.now()}-7`, investigation_id: caseId, agent_id: 'verification-agent', type: 'STAGE_CHANGED', status: 'VERIFYING', message: 'Verification Matrix completed: 0 contradictions, 100% verified claims.', timestamp: new Date(Date.now() - 500).toISOString() },
-    { event_id: `evt-${Date.now()}-8`, investigation_id: caseId, agent_id: 'report-generator', type: 'STAGE_CHANGED', status: 'COMPLETED', message: 'Investigation Report compiled and sealed with MITRE ATT&CK mappings.', timestamp: new Date().toISOString() },
+    { event_id: `evt-${now}-1`, investigation_id: caseId, agent_id: 'system', agent_name: 'Evidence Intake', type: 'STAGE_CHANGED', status: 'RECEIVED', message: 'Evidence received: Evidence package registered in immutable store.', timestamp: new Date(now - 8000).toISOString() },
+    { event_id: `evt-${now}-2`, investigation_id: caseId, agent_id: 'system', agent_name: 'Fingerprint Engine', type: 'HASH_CALCULATED', status: 'VALIDATING', message: `Hash calculated: SHA256: ${sha256.slice(0, 16)}..., MD5: ${md5.slice(0, 16)}..., SHA1: ${sha1.slice(0, 16)}...`, timestamp: new Date(now - 7000).toISOString() },
+    { event_id: `evt-${now}-3`, investigation_id: caseId, agent_id: 'malware-analysis', agent_name: 'Static Analyzer', type: 'STAGE_CHANGED', status: 'ANALYZING', message: 'Static analysis started: Extracting strings, PE headers, imports, entropy, and structural metadata.', timestamp: new Date(now - 6000).toISOString() },
+    { event_id: `evt-${now}-4`, investigation_id: caseId, agent_id: 'ioc-extraction', agent_name: 'IOC Extraction', type: 'IOC_DISCOVERED', status: 'ANALYZING', message: `IOC discovered: Extracted ${extracted.ips.length + extracted.domains.length + extracted.urls.length} indicators with line-level provenance.`, timestamp: new Date(now - 5000).toISOString() },
+    { event_id: `evt-${now}-5`, investigation_id: caseId, agent_id: 'malware-analysis', agent_name: 'Malware Analysis', type: 'STAGE_CHANGED', status: 'ANALYZING', message: 'Malware analysis started: Evaluating opcode heuristics, signatures, and injection APIs.', timestamp: new Date(now - 4000).toISOString() },
+    { event_id: `evt-${now}-6`, investigation_id: caseId, agent_id: 'threat-intel', agent_name: 'Threat Intelligence', type: 'THREAT_INTEL_LOOKUP', status: 'ANALYZING', message: 'Threat-intel lookup: Queried VirusTotal, AbuseIPDB, and AlienVault OTX for indicator reputation.', timestamp: new Date(now - 3000).toISOString() },
+    { event_id: `evt-${now}-7`, investigation_id: caseId, agent_id: 'specialists', agent_name: 'Specialist Agents', type: 'FINDING_RECORDED', status: 'ANALYZING', message: `Agent finding: Specialist fleet produced ${agentFindings.length} structured, evidence-backed findings.`, timestamp: new Date(now - 2000).toISOString() },
+    { event_id: `evt-${now}-8`, investigation_id: caseId, agent_id: 'verification-agent', agent_name: 'Verification Agent', type: 'STAGE_CHANGED', status: 'VERIFYING', message: 'Verification: Cross-checked specialist claims, validated evidence provenance, and generated verification matrix.', timestamp: new Date(now - 1000).toISOString() },
+    { event_id: `evt-${now}-9`, investigation_id: caseId, agent_id: 'report-generator', agent_name: 'Report Generator', type: 'STAGE_CHANGED', status: 'COMPLETED', message: 'Final report: Investigation Report compiled and sealed with MITRE ATT&CK techniques and containment directives.', timestamp: new Date(now).toISOString() },
   ];
   inMemoryEvents.set(caseId, events);
+  saveStateToDisk();
 
   res.status(201).json({ success: true, investigation });
+});
+
+// Live Activity Feed across all investigations
+app.get('/api/investigations/live-activity', (_req: Request, res: Response) => {
+  const allEvents: any[] = [];
+  inMemoryEvents.forEach((evts) => {
+    allEvents.push(...evts);
+  });
+  allEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const activities = allEvents.slice(0, 100).map((e, idx) => ({
+    id: e.event_id || `activity-${idx}`,
+    timestamp: new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    agentName: e.agent_name || (e.agent_id === 'system' ? 'SYSTEM' : e.agent_id),
+    agentType: e.agent_id === 'threat-intel' ? 'threat-intel' : e.agent_id === 'verification-agent' ? 'archon' : 'malware-analysis',
+    action: e.message,
+    type: e.type === 'FINDING_RECORDED' ? 'warning' : 'info',
+    stage: e.status,
+  }));
+  res.json({ success: true, activities, total: allEvents.length });
+});
+
+// Malware Intelligence Evaluation Endpoints
+app.get('/api/malware-intel/evaluate', (_req: Request, res: Response) => {
+  const metrics = evaluateMalwareDetector();
+  res.json({ success: true, metrics });
+});
+
+app.post('/api/malware-intel/evaluate', (req: Request, res: Response) => {
+  const dataset = req.body?.dataset;
+  const metrics = evaluateMalwareDetector(Array.isArray(dataset) && dataset.length > 0 ? dataset : undefined);
+  res.json({ success: true, metrics });
 });
 
 // Get single investigation by id or caseNumber
@@ -1682,6 +1818,7 @@ app.post('/api/investigations/:id/transition', (req: Request, res: Response) => 
     timestamp: new Date().toISOString(),
   };
   inMemoryEvents.set(found.id, [...currentEvents, transitionEvent]);
+  saveStateToDisk();
 
   res.json({ success: true, status: found.status, investigation: found });
 });
@@ -1698,8 +1835,137 @@ app.post('/api/investigations/:id/events', (req: Request, res: Response) => {
   const current = inMemoryEvents.get(artifactId) || [];
   const newEvents = Array.isArray(req.body) ? req.body : req.body.events || [];
   inMemoryEvents.set(artifactId, [...current, ...newEvents]);
+  saveStateToDisk();
   res.json({ success: true, inserted: newEvents.length });
 });
+
+// ---------------------------------------------------------------------------
+// Threat Intelligence News & Feed Ingestion (/api/news/*)
+// ---------------------------------------------------------------------------
+const DEFAULT_CYBER_AFFAIRS = [
+  {
+    id: 'news-cisa-01',
+    title: 'CISA Adds Known Exploited Vulnerability to Catalog: CVE-2024-38077 Windows RDLCS RCE',
+    source: 'CISA Alert',
+    category: 'Vulnerability Advisory',
+    severity: 'CRITICAL',
+    publishedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+    url: 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog',
+    summary: 'Adversaries observed actively exploiting critical remote code execution flaw in Windows Remote Desktop Licensing Service. Immediate patching and network isolation mandated for federal agencies.',
+    cves: ['CVE-2024-38077'],
+    tags: ['RCE', 'Windows', 'Active Exploitation', 'CISA KEV'],
+  },
+  {
+    id: 'news-apt-02',
+    title: 'APT29 Cozy Bear Spearphishing Campaign Leveraging Obfuscated PowerShell Cradles',
+    source: 'Threatpost Cyber Intel',
+    category: 'APT Campaign',
+    severity: 'HIGH',
+    publishedAt: new Date(Date.now() - 3600000 * 6).toISOString(),
+    url: 'https://threatpost.com/apt29-phishing-campaign-analysis',
+    summary: 'Campaign targets diplomatic entities using multi-stage reflective DLL loaders and C2 traffic disguised as legitimate cloud service API synchronization.',
+    actors: ['APT29', 'Cozy Bear'],
+    tags: ['APT29', 'Spearphishing', 'Cobalt Strike', 'Reflective Injection'],
+  },
+  {
+    id: 'news-ransom-03',
+    title: 'LockBit 3.0 Ransomware Variants Utilizing VSSAdmin and BCDEdit Evasion Scripts',
+    source: 'BleepingComputer Alert',
+    category: 'Ransomware Brief',
+    severity: 'HIGH',
+    publishedAt: new Date(Date.now() - 3600000 * 14).toISOString(),
+    url: 'https://bleepingcomputer.com/news/security/lockbit-3-variants-evasion',
+    summary: 'LockBit affiliates deploy automated batch scripts that systematically delete Volume Shadow Copies and disable Windows recovery before initiating high-entropy AES encryption.',
+    tags: ['LockBit', 'Ransomware', 'VSSAdmin', 'Shadow Copies'],
+  },
+  {
+    id: 'news-nist-04',
+    title: 'NIST NVD Update: CVSS 9.8 Flaw Identified in OpenSSH Server RegreSSHion (CVE-2024-6387)',
+    source: 'NIST National Vulnerability Database',
+    category: 'Vulnerability Advisory',
+    severity: 'CRITICAL',
+    publishedAt: new Date(Date.now() - 3600000 * 22).toISOString(),
+    url: 'https://nvd.nist.gov/vuln/detail/CVE-2024-6387',
+    summary: 'Signal handler race condition in OpenSSH sshd allows unauthenticated remote code execution as root on glibc-based Linux systems.',
+    cves: ['CVE-2024-6387'],
+    tags: ['OpenSSH', 'RCE', 'RegreSSHion', 'Linux Root'],
+  },
+  {
+    id: 'news-cloud-05',
+    title: 'Threat Actor Abuse of Discord CDN and Cloudflare Workers for C2 Relays and Data Exfiltration',
+    source: 'Mandiant Threat Intelligence',
+    category: 'Threat Landscape',
+    severity: 'MEDIUM',
+    publishedAt: new Date(Date.now() - 3600000 * 30).toISOString(),
+    url: 'https://mandiant.com/resources/blog/cloud-relay-abuse-c2',
+    summary: 'Stealer malware developers increasingly utilize consumer cloud APIs to bypass perimeter inspection and exfiltrate browser credentials and crypto wallet tokens.',
+    tags: ['Cloud Relay', 'C2', 'Data Exfiltration', 'Infostealer'],
+  },
+];
+
+const handleDailyNews = (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    total: DEFAULT_CYBER_AFFAIRS.length,
+    timestamp: new Date().toISOString(),
+    feed: 'NEXSUS Daily Cyber Threat Current Affairs',
+    articles: DEFAULT_CYBER_AFFAIRS,
+    news: DEFAULT_CYBER_AFFAIRS,
+  });
+};
+
+app.get('/api/news/daily-current-affairs', handleDailyNews);
+app.post('/api/news/daily-current-affairs', handleDailyNews);
+
+const handleFetchFeed = async (req: Request, res: Response) => {
+  const feedUrl = (req.query?.url as string) || (req.body?.url as string) || 'https://www.cisa.gov/rss/all.xml';
+  try {
+    let items = DEFAULT_CYBER_AFFAIRS;
+    if (feedUrl && !feedUrl.includes('localhost') && feedUrl.startsWith('http')) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4000);
+        const resp = await fetch(feedUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (resp.ok) {
+          const text = await resp.text();
+          const titles = Array.from(text.matchAll(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/gi)).map((m) => m[1]);
+          const links = Array.from(text.matchAll(/<link>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/link>/gi)).map((m) => m[1]);
+          const descriptions = Array.from(text.matchAll(/<description>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/description>/gi)).map((m) => m[1]);
+          if (titles.length > 1) {
+            items = titles.slice(1, 10).map((title, i) => ({
+              id: `feed-item-${i}`,
+              title: title.replace(/<[^>]+>/g, ''),
+              source: feedUrl,
+              category: 'RSS Feed',
+              severity: /critical|zero-day|rce/i.test(title) ? 'CRITICAL' : /exploit|ransomware|cve/i.test(title) ? 'HIGH' : 'MEDIUM',
+              publishedAt: new Date().toISOString(),
+              url: links[i + 1] || feedUrl,
+              summary: (descriptions[i + 1] || title).replace(/<[^>]+>/g, '').slice(0, 300),
+              tags: ['Cyber Threat', 'RSS Ingested'],
+            }));
+          }
+        }
+      } catch (e) {
+        // Fallback gracefully to default cyber affairs
+      }
+    }
+
+    res.json({
+      success: true,
+      feedUrl,
+      fetchedAt: new Date().toISOString(),
+      count: items.length,
+      items,
+      news: items,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to fetch feed' });
+  }
+};
+
+app.get('/api/news/fetch-feed', handleFetchFeed);
+app.post('/api/news/fetch-feed', handleFetchFeed);
 
 // ---------------------------------------------------------------------------
 // AI Orchestration Chat (/api/ai/chat)

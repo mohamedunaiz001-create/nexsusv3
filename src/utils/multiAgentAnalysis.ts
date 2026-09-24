@@ -3,6 +3,7 @@ import {
   EvidenceArtifact,
   AgentFinding,
   EvidenceFinding,
+  CanonicalVerdict,
   MalwareVerdict,
   EvidencePackage,
   CorrelatedFinding,
@@ -82,12 +83,22 @@ export function initializeAgentFindings(pipeline: SpecialistAgent[]): AgentFindi
 
 interface FindingContent {
   verdict: AgentFinding['verdict'];
+  canonicalVerdict?: CanonicalVerdict;
   maliciousScore?: number;
   summary: string;
   findings?: EvidenceFinding[];
   evidenceGaps?: string[];
   evidenceCoverage?: number;
   evidenceQuality?: AgentFinding['evidenceQuality'];
+  limitations?: string[];
+  recommendations?: string[];
+  conflicts?: {
+    agentA: string;
+    verdictA: string;
+    agentB: string;
+    verdictB: string;
+    reason: string;
+  }[];
 }
 
 function investigationRelationships(artifact: EvidenceArtifact, iocs = extractIOCs({
@@ -637,18 +648,75 @@ function findingFromCodeReview(artifact: EvidenceArtifact): FindingContent {
 }
 
 // ---------------------------------------------------------------------------
-// memory-agent — real similarity-search results from the Malware
-// Intelligence Engine's corpus when available, rather than a random
-// "found N similar cases" line.
+// ---------------------------------------------------------------------------
+// memory-agent — analyzes in-memory process manipulation, API imports, and
+// reflective loading indicators. Avoids generic "not applicable" when evidence
+// exists in the binary/script, and explains exact findings, evidence,
+// confidence, limitations, and required volatile forensic memory evidence.
 // ---------------------------------------------------------------------------
 function findingFromMemoryAgent(artifact: EvidenceArtifact): FindingContent {
   const isMemoryDump = (artifact.type as string) === 'memory' || /\.(dmp|raw|vmem|bin|core|vmdk)$/i.test(artifact.name) || /memory|volatility|snapshot/i.test(artifact.name);
   const sample = artifact.malwareIntelSample;
+  const text = (artifact.analysisContent || artifact.previewContent || '').toLowerCase();
+  const suspiciousImports = (artifact.malwareIntelSample?.verdictDetail?.suspiciousImports || []).map((s) => s.toLowerCase());
+
+  // Check for in-memory manipulation APIs and indicators
+  const memoryApis = [
+    'virtualalloc', 'virtualallocex', 'virtualprotect', 'writeprocessmemory',
+    'createremotethread', 'queueuserapc', 'ntmapviewofsection', 'setthreadcontext',
+    'reflectiveloader', 'minidumpwritedump', 'lsass', 'sekurlsa', 'mimikatz',
+  ];
+  const detectedMemoryApis = memoryApis.filter(
+    (api) => text.includes(api) || suspiciousImports.some((si) => si.includes(api)),
+  );
+
+  if (detectedMemoryApis.length > 0) {
+    const findings: EvidenceFinding[] = [
+      {
+        claim: 'In-memory process manipulation & allocation primitives identified',
+        evidence: `Detected memory-injection / scraping primitives: ${detectedMemoryApis.join(', ')}`,
+        source: 'memory.static_signature',
+        confidence: 0.88,
+        evidenceType: 'DIRECT',
+        limitation: 'Identified via static imports/strings; live thread execution requires RAM capture.',
+      },
+      {
+        claim: 'Potential reflective loader or shellcode injection mechanism',
+        evidence: detectedMemoryApis.includes('reflectiveloader')
+          ? 'ReflectiveLoader export indicates in-memory self-loading capability without touching disk.'
+          : 'Memory allocation combined with remote thread or protection APIs indicates process injection pattern.',
+        source: 'memory.loader_heuristics',
+        confidence: 0.85,
+        evidenceType: 'HIGH',
+      },
+    ];
+
+    return {
+      verdict: 'Suspicious',
+      canonicalVerdict: 'suspicious',
+      maliciousScore: 78,
+      summary: `Memory Analysis: Detected ${detectedMemoryApis.length} in-memory injection/manipulation primitive(s) (${detectedMemoryApis.join(', ')}). Static indicators establish injection capability; live execution state requires volatile RAM analysis.`,
+      findings,
+      evidenceCoverage: 75,
+      evidenceQuality: 'HIGH',
+      limitations: [
+        'Dynamic execution behavior, unlinked VAD structures, runtime decrypted payload in heap pages, or injected thread execution state cannot be observed without live RAM image acquisition.',
+      ],
+      evidenceGaps: [
+        'Requires volatile memory acquisition image or crash dump (.dmp, .raw) to verify active thread execution or injected heap allocations.',
+      ],
+      recommendations: [
+        'Acquire volatile memory image using WinPmem or LiME if host system is live.',
+        'Execute sample in monitored memory-sandbox and run Volatility 3 plugins: windows.malfind, windows.psxview, windows.vadinfo.',
+      ],
+    };
+  }
 
   if (!isMemoryDump && (!sample || !sample.verdictDetail?.similarSamples?.length)) {
     return {
-      verdict: 'Not Applicable',
-      summary: `Memory Analysis: NOT APPLICABLE.\nReason: Uploaded evidence is ${artifact.type === 'file' ? 'a PE / static file' : `a ${artifact.type} artifact`} and contains no memory dump or process snapshot.\nRequired evidence:\n- memory dump (.raw, .dmp, .vmem)\n- process dump\n- live memory acquisition\nConclusion: No memory-forensic conclusion was attempted.`,
+      verdict: 'Insufficient Evidence',
+      canonicalVerdict: 'analysis_unavailable',
+      summary: `Memory Analysis: No in-memory manipulation indicators or memory dump present.\nReason: Uploaded evidence is ${artifact.type === 'file' ? 'a static file' : `a ${artifact.type} artifact`} without memory-injection imports, process handles, or volatile memory pages.`,
       findings: [
         {
           claim: 'Forensic memory scope preflight evaluation',
@@ -661,8 +729,14 @@ function findingFromMemoryAgent(artifact: EvidenceArtifact): FindingContent {
       ],
       evidenceCoverage: 0,
       evidenceQuality: 'LOW',
+      limitations: [
+        'No volatile physical RAM pages, process memory snapshots, or in-memory injection APIs detected in sample.',
+      ],
       evidenceGaps: [
-        'Requires volatile memory acquisition image or crash dump (.dmp, .raw) to extract injected DLLs, unlinked VAD structures, or in-memory shellcode.',
+        'Requires volatile memory acquisition image (.dmp, .raw, .vmem) or process dump to perform memory forensic analysis.',
+      ],
+      recommendations: [
+        'Submit a process memory dump (.dmp) or physical memory capture if suspicious runtime behavior is suspected.',
       ],
     };
   }
@@ -670,6 +744,7 @@ function findingFromMemoryAgent(artifact: EvidenceArtifact): FindingContent {
   if (!sample) {
     return {
       verdict: 'Insufficient Evidence',
+      canonicalVerdict: 'analysis_unavailable',
       summary: 'No similarity search was run for this artifact — it was not processed by the Malware Intelligence Engine\'s similarity index.',
     };
   }
@@ -677,6 +752,7 @@ function findingFromMemoryAgent(artifact: EvidenceArtifact): FindingContent {
   if (matches.length === 0) {
     return {
       verdict: 'Informational',
+      canonicalVerdict: 'unknown',
       summary: 'No structurally similar historical sample found in the knowledge base — this appears to be a novel artifact by feature-vector similarity.',
     };
   }
@@ -699,6 +775,7 @@ function findingFromMemoryAgent(artifact: EvidenceArtifact): FindingContent {
   });
   return {
     verdict: 'Informational',
+    canonicalVerdict: 'unknown',
     summary: `Found ${matches.length} structurally similar historical sample(s) in the knowledge base — top match ${matches[0].score}% similar to "${matches[0].name}".`,
     findings,
     evidenceCoverage: 100,
@@ -709,17 +786,15 @@ function findingFromMemoryAgent(artifact: EvidenceArtifact): FindingContent {
 
 // ---------------------------------------------------------------------------
 // verification-agent — actually cross-validates the other specialists'
-// completed findings on this artifact (available via artifact.agentFindings,
-// which is progressively filled in as earlier pipeline steps complete)
-// instead of issuing a canned "no contradictions" line regardless of what
-// happened.
+// completed findings on this artifact. Specifically surfaces contradictory
+// findings with high visibility rather than silently choosing one.
 // ---------------------------------------------------------------------------
 function findingFromVerification(artifact: EvidenceArtifact): FindingContent {
   const priorFindings = (artifact.agentFindings || []).filter(
     (f) => f.status === 'complete' && f.agentId !== 'verification-agent' && f.agentId !== 'report-generator',
   );
   if (priorFindings.length === 0) {
-    return { verdict: 'Insufficient Evidence', summary: 'No specialist findings are available yet to cross-validate.' };
+    return { verdict: 'Insufficient Evidence', canonicalVerdict: 'analysis_unavailable', summary: 'No specialist findings are available yet to cross-validate.' };
   }
 
   const scored = priorFindings.filter((f) => typeof f.maliciousScore === 'number');
@@ -730,21 +805,39 @@ function findingFromVerification(artifact: EvidenceArtifact): FindingContent {
   const evidenceGaps: string[] = [];
   const directEvidence = priorFindings.flatMap((f) => f.findings || []).filter((f) => f.evidenceType === 'DIRECT' || f.evidenceType === 'HIGH');
 
-  const hasMalicious = verdictSet.has('Malicious');
-  const hasSafe = verdictSet.has('Safe');
+  const maliciousAgents = scored.filter((f) => f.verdict === 'Malicious');
+  const safeAgents = scored.filter((f) => f.verdict === 'Safe');
+  const hasMalicious = maliciousAgents.length > 0;
+  const hasSafe = safeAgents.length > 0;
+
+  let conflicts: { agentA: string; verdictA: string; agentB: string; verdictB: string; reason: string }[] | undefined;
+
   if (hasMalicious && hasSafe) {
+    conflicts = [
+      {
+        agentA: maliciousAgents.map((a) => a.agentName).join(', '),
+        verdictA: 'Malicious',
+        agentB: safeAgents.map((a) => a.agentName).join(', '),
+        verdictB: 'Safe',
+        reason: 'Direct contradiction between specialist agents. Requires manual SOC tier-3 escalation or sandboxed detonation before automated containment.',
+      },
+    ];
+
     findings.push({
-      claim: 'Contradictory specialist verdicts detected',
-      evidence: `${scored.filter((f) => f.verdict === 'Malicious').map((f) => f.agentName).join(', ')} reported Malicious while ${scored.filter((f) => f.verdict === 'Safe').map((f) => f.agentName).join(', ')} reported Safe.`,
-      source: 'verification.cross_check',
-      confidence: 0.9,
+      claim: 'CRITICAL CONTRADICTION DETECTED across specialist verdicts',
+      evidence: `${maliciousAgents.map((f) => f.agentName).join(', ')} determined MALICIOUS while ${safeAgents.map((f) => f.agentName).join(', ')} determined SAFE.`,
+      source: 'verification.cross_check.conflict',
+      confidence: 0.95,
+      evidenceType: 'DIRECT',
+      limitation: 'Automated containment must be held pending analyst arbitration of conflicting evidence.',
     });
   } else if (scored.length > 0) {
     findings.push({
       claim: 'Specialist verdicts are consistent',
-      evidence: `${scored.length} scoring specialist(s) agree on direction (no Malicious/Safe contradiction).`,
+      evidence: `${scored.length} scoring specialist(s) agree on direction (no Malicious vs Safe contradiction).`,
       source: 'verification.cross_check',
-      confidence: 0.7,
+      confidence: 0.85,
+      evidenceType: 'DIRECT',
     });
   }
 
@@ -756,19 +849,21 @@ function findingFromVerification(artifact: EvidenceArtifact): FindingContent {
       evidence: `Scores range from ${Math.min(...scores)} to ${Math.max(...scores)} across ${scored.length} specialist(s).`,
       source: 'verification.score_spread',
       confidence: 0.7,
+      evidenceType: 'MEDIUM',
     });
     evidenceGaps.push('Specialists disagree materially on confidence; review the strongest supporting and contradicting evidence before acting.');
   }
 
   if (insufficient.length > 0) {
     evidenceGaps.push(
-      `${insufficient.length} of ${priorFindings.length} specialist(s) reported insufficient evidence or that the check didn't apply: ${insufficient.map((f) => f.agentName).join(', ')}.`,
+      `${insufficient.length} of ${priorFindings.length} specialist(s) reported insufficient evidence: ${insufficient.map((f) => f.agentName).join(', ')}.`,
     );
     findings.push({
       claim: 'Evidence coverage is incomplete',
-      evidence: `${insufficient.length} specialist(s) could not produce a real finding for this artifact (see individual step summaries).`,
+      evidence: `${insufficient.length} specialist(s) could not produce a conclusive finding for this artifact.`,
       source: 'verification.coverage',
       confidence: 0.8,
+      evidenceType: 'MEDIUM',
     });
   }
 
@@ -785,13 +880,22 @@ function findingFromVerification(artifact: EvidenceArtifact): FindingContent {
   }
 
   const coverageRatio = (priorFindings.length - insufficient.length) / priorFindings.length;
-  const confidenceLabel = coverageRatio >= 0.8 && !(hasMalicious && hasSafe) ? 'HIGH' : coverageRatio >= 0.4 ? 'MEDIUM' : 'LOW';
+  const isContradicted = hasMalicious && hasSafe;
+  const finalVerdict = isContradicted ? 'Suspicious' : 'Informational';
+  const canonicalVerdict: CanonicalVerdict = isContradicted ? 'suspicious' : hasMalicious ? 'malicious' : hasSafe ? 'benign' : 'unknown';
 
   return {
-    verdict: 'Informational',
-    summary: `Cross-validated ${priorFindings.length} specialist finding(s). Evidence coverage: ${Math.round(coverageRatio * 100)}% (${confidenceLabel} confidence). ${hasMalicious && hasSafe ? 'Contradictions found — see below.' : 'No contradictory conclusions found.'}`,
+    verdict: finalVerdict,
+    canonicalVerdict,
+    summary: isContradicted
+      ? `CRITICAL CONTRADICTION DETECTED: Specialists disagree fundamentally on sample verdict (${maliciousAgents.map((f) => f.agentName).join(', ')} flagged Malicious vs ${safeAgents.map((f) => f.agentName).join(', ')} flagged Safe). Immediate manual arbitration required.`
+      : `Cross-validated ${priorFindings.length} specialist finding(s). Evidence coverage: ${Math.round(coverageRatio * 100)}%. No contradictory conclusions found.`,
     findings,
+    conflicts,
     evidenceGaps: evidenceGaps.length ? evidenceGaps : undefined,
+    recommendations: isContradicted
+      ? ['Pause automated containment or firewall block rules.', 'Escalate to Senior Threat Analyst for manual deobfuscation and dynamic detonation.', 'Request additional PCAP or host memory dump to resolve the conflict.']
+      : undefined,
   };
 }
 
@@ -883,17 +987,18 @@ export function generateFinding(agentId: string, artifact: EvidenceArtifact): Fi
 
 export function computeAggregateVerdict(
   findings: AgentFinding[],
-): { maliciousScore: number; verdict: 'Malicious' | 'Suspicious' | 'Safe' | 'Unknown' } {
+): { maliciousScore: number; verdict: 'Malicious' | 'Suspicious' | 'Safe' | 'Unknown'; canonicalVerdict: CanonicalVerdict } {
   const scored = findings.filter((f) => typeof f.maliciousScore === 'number');
   if (scored.length === 0) {
     // No specialist produced a real, evidence-backed score — reporting
     // "Safe" here would be indistinguishable from an artifact that was
     // actually checked and found clean. Say plainly that it's unassessed.
-    return { maliciousScore: 0, verdict: 'Unknown' };
+    return { maliciousScore: 0, verdict: 'Unknown', canonicalVerdict: 'analysis_unavailable' };
   }
   const score = Math.round(scored.reduce((sum, f) => sum + (f.maliciousScore || 0), 0) / scored.length);
   const verdict = score >= 65 ? 'Malicious' : score >= 30 ? 'Suspicious' : 'Safe';
-  return { maliciousScore: score, verdict };
+  const canonicalVerdict: CanonicalVerdict = score >= 65 ? 'malicious' : score >= 30 ? 'suspicious' : 'benign';
+  return { maliciousScore: score, verdict, canonicalVerdict };
 }
 
 export function computeInvestigationMetrics(findings: AgentFinding[]): {
