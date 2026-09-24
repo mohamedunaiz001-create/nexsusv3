@@ -691,4 +691,54 @@
   text-transform: uppercase;
 }
 
+/* ==========================================================================
+   AGENT ORCHESTRATION & NEURAL DATA-FLOW ANIMATIONS
+   ========================================================================== */
+
+@keyframes data-flow-dash {
+  0% {
+    stroke-dashoffset: 24;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes data-flow-dash-reverse {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 24;
+  }
+}
+
+@keyframes data-packet-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+
+.animate-data-flow {
+  animation: data-flow-dash 1.2s linear infinite;
+}
+
+.animate-data-flow-fast {
+  animation: data-flow-dash 0.75s linear infinite;
+}
+
+.animate-data-flow-reverse {
+  animation: data-flow-dash-reverse 1.2s linear infinite;
+}
+
+.animate-packet-pulse {
+  animation: data-packet-pulse 1.8s ease-in-out infinite;
+}
+
+
 
