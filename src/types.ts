@@ -620,18 +620,132 @@ export interface MalwareIntelStats {
   f1Score?: number | null;
   rocAuc?: number | null;
 }
+
+// ---------------------------------------------------------------------------
+// Production Investigation Pipeline & Evidence Contracts
+// ---------------------------------------------------------------------------
+
+export type InvestigationStageStatus =
+  | 'RECEIVED'
+  | 'VALIDATING'
+  | 'QUEUED'
+  | 'ANALYZING'
+  | 'CORRELATING'
+  | 'VERIFYING'
+  | 'COMPLETED'
+  | 'FAILED';
+
+export interface EvidencePackage {
+  investigation_id: string;
+  evidence_id: string;
+  file: {
+    name: string;
+    sha256: string;
+    mime_type: string;
+    size: number;
+  };
+  available_artifacts: {
+    strings: string[];
+    pe_headers?: Record<string, any>;
+    network_connections: string[];
+    urls: string[];
+    domains: string[];
+    ips: string[];
+    hashes: string[];
+    registry: string[];
+    processes: string[];
+    files: string[];
+  };
+}
+
+export interface StructuredFinding {
+  finding: string;
+  evidence: string;
+  source: string;
+  confidence: number;
+  reasoning?: string;
+  agent: string;
+  timestamp: string;
+  status: 'Needs verification' | 'Verified' | 'Contradicted' | 'Unverified';
+  location?: string;
+  context?: string;
+  category?: string;
+}
+
+export interface CorrelatedFinding {
+  id: string;
+  indicatorOrClaim: string;
+  type: string;
+  confidence: number;
+  evidenceChecklist: {
+    label: string;
+    checked: boolean;
+    source: string;
+  }[];
+  status: 'HIGH' | 'MEDIUM' | 'LOW';
+  contributingAgents: string[];
+  timestamp: string;
+}
+
+export interface VerificationItem {
+  claim: string;
+  evidenceCheck: string;
+  sourceCheck: string;
+  agentAgreement: string;
+  contradictionCheck: string;
+  confidence: number;
+  status: 'VERIFIED' | 'UNVERIFIED' | 'CONTRADICTED';
+  evaluatedAt: string;
+}
+
+export interface InvestigationAuditLog {
+  event_id: string;
+  investigation_id: string;
+  agent_id?: string;
+  type: string;
+  timestamp: string;
+  status: 'success' | 'warning' | 'error' | 'info';
+  message: string;
+  metadata?: Record<string, any>;
+}
+
+export interface InvestigationReport {
+  investigation_id: string;
+  title: string;
+  caseNumber: string;
+  createdAt: string;
+  completedAt?: string;
+  executiveSummary: string;
+  verdict: 'Malicious' | 'Suspicious' | 'Clean' | 'Unknown';
+  confidence: number;
+  evidencePackage: EvidencePackage;
+  categorizedIOCs: {
+    hashes: ExtractedIOC[];
+    network: ExtractedIOC[];
+    files: ExtractedIOC[];
+    malwareArtifacts: ExtractedIOC[];
+  };
+  specialistFindings: Record<string, any>;
+  correlatedFindings: CorrelatedFinding[];
+  verificationMatrix: VerificationItem[];
+  mitreAttackTechniques: string[];
+  evidenceGaps: string[];
+  recommendations: string[];
+  timeline: InvestigationAuditLog[];
+}
 // --- Real IOC extraction (src/utils/iocExtraction.ts) ----------------------
 // Every value here is pattern-matched out of actual artifact text (names,
 // preview content, malware-intel string findings) — never randomly
 // generated. See iocExtraction.ts for the detectors.
 export type ExtractedIOCType =
-  | 'sha256' | 'sha1' | 'md5' | 'sha512'
-  | 'ipv4' | 'ipv6' | 'domain' | 'fqdn' | 'url' | 'email'
+  | 'sha256' | 'sha1' | 'md5' | 'sha512' | 'ssdeep' | 'tlsh' | 'file_hash'
+  | 'ipv4' | 'ipv6' | 'domain' | 'fqdn' | 'url' | 'email' | 'port' | 'protocol' | 'dns_record' | 'c2_indicator'
   | 'btc_address' | 'monero_address'
-  | 'windows_path' | 'linux_path'
-  | 'registry_path' | 'registry_key' | 'mutex' | 'named_pipe'
+  | 'windows_path' | 'linux_path' | 'filename' | 'extension'
+  | 'registry_path' | 'registry_key' | 'mutex' | 'named_pipe' | 'scheduled_task' | 'service_name'
   | 'cert_fingerprint' | 'ja3' | 'ja3s' | 'user_agent' | 'asn'
-  | 'cve' | 'attack_technique' | 'attack_software' | 'attack_group' | 'file_hash';
+  | 'pdb_path' | 'embedded_url' | 'campaign_id' | 'config_indicator' | 'encryption_key_artifact' | 'cmdline_indicator'
+  | 'cve' | 'attack_technique' | 'attack_software' | 'attack_group';
 
 export interface ExtractedIOC {
   type: ExtractedIOCType;
@@ -641,6 +755,8 @@ export interface ExtractedIOC {
   location?: string;
   lineNumber?: number;
   context?: string;
+  category?: 'hash' | 'network' | 'file' | 'malware_artifact' | 'threat_intel' | 'crypto';
+  agent?: string;
   /** 0-1. Regex-shape confidence, not a threat-intel reputation score. */
   confidence: number;
   /** Semantic role inferred from surrounding context */

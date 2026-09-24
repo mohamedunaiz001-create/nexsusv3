@@ -268,6 +268,8 @@ const DETECTORS: Detector[] = [
   { type: 'sha256', re: /\b[a-fA-F0-9]{64}\b/g, confidence: 0.98 },
   { type: 'sha1', re: /\b[a-fA-F0-9]{40}\b/g, confidence: 0.9 },
   { type: 'md5', re: /\b[a-fA-F0-9]{32}\b/g, confidence: 0.85 },
+  { type: 'ssdeep', re: /\b\d{1,6}:[A-Za-z0-9/+]{10,}:[A-Za-z0-9/+]{5,}\b/g, confidence: 0.95 },
+  { type: 'tlsh', re: /\bT1[0-9A-Fa-f]{68,72}\b/gi, confidence: 0.95 },
 
   // Threat Intel & Vulnerabilities
   { type: 'cve', re: /\bCVE-\d{4}-\d{4,7}\b/gi, confidence: 0.99 },
@@ -292,6 +294,13 @@ const DETECTORS: Detector[] = [
     type: 'url',
     re: /\b(?:https?|ftp|hxxp(?:s?)):\/\/[^\s"'<>()]+|\b(?:https?|hxxp(?:s?))\s*:\s*\/\/[^\s"'<>()]+/gi,
     confidence: 0.95,
+  },
+
+  // DNS Records
+  {
+    type: 'dns_record',
+    re: /\bIN\s+(?:A|AAAA|CNAME|TXT|MX|NS)\s+[a-zA-Z0-9._\-]+\b/gi,
+    confidence: 0.9,
   },
 
   // Email
@@ -344,6 +353,40 @@ const DETECTORS: Detector[] = [
     confidence: 0.95,
   },
 
+  // Scheduled Tasks & Services
+  {
+    type: 'scheduled_task',
+    re: /\bschtasks(?:\.exe)?\s+\/(?:create|run|change)[^\r\n;]+/gi,
+    confidence: 0.9,
+  },
+  {
+    type: 'service_name',
+    re: /\bsc(?:\.exe)?\s+(?:create|start|config)\s+[a-zA-Z0-9_\-]+/gi,
+    confidence: 0.9,
+  },
+
+  // Malware Artifacts & Internal Evidence
+  {
+    type: 'pdb_path',
+    re: /\b[A-Za-z]:\\[^\s"'<>|:*?]+\.pdb\b/gi,
+    confidence: 0.95,
+  },
+  {
+    type: 'cmdline_indicator',
+    re: /\b(?:cmd(?:\.exe)?\s+\/c\s+[^\r\n]+|powershell(?:\.exe)?\s+-(?:enc|encodedcommand|executionpolicy|nop|w\s+hidden)[^\r\n]+)\b/gi,
+    confidence: 0.92,
+  },
+  {
+    type: 'config_indicator',
+    re: /\b(?:c2_server|c2_port|beacon_interval|sleep_time|jitter|rsa_public_key|aes_key)\s*[:=]\s*["']?([^\s"';]+)["']?/gi,
+    confidence: 0.92,
+  },
+  {
+    type: 'campaign_id',
+    re: /\b(?:campaign|camp_id|op_name|operation)\s*[:=]\s*["']?([A-Za-z0-9_\-]{3,32})["']?/gi,
+    confidence: 0.88,
+  },
+
   // Windows Filesystem Paths
   {
     type: 'windows_path',
@@ -373,6 +416,34 @@ const DETECTORS: Detector[] = [
     validate: (v) => !/^\d+(\.\d+){3}$/.test(v) && !/^[a-fA-F0-9]{32,}$/.test(v),
   },
 ];
+
+export function inferCategory(type: ExtractedIOCType): ExtractedIOC['category'] {
+  if (['sha256', 'sha1', 'md5', 'sha512', 'ssdeep', 'tlsh', 'file_hash'].includes(type)) return 'hash';
+  if (['ipv4', 'ipv6', 'domain', 'fqdn', 'url', 'email', 'port', 'protocol', 'dns_record', 'c2_indicator', 'asn', 'ja3', 'ja3s', 'cert_fingerprint'].includes(type)) return 'network';
+  if (['windows_path', 'linux_path', 'filename', 'extension', 'registry_path', 'registry_key', 'mutex', 'named_pipe', 'scheduled_task', 'service_name'].includes(type)) return 'file';
+  if (['pdb_path', 'embedded_url', 'campaign_id', 'config_indicator', 'encryption_key_artifact', 'cmdline_indicator', 'user_agent'].includes(type)) return 'malware_artifact';
+  if (['cve', 'attack_technique', 'attack_software', 'attack_group'].includes(type)) return 'threat_intel';
+  if (['btc_address', 'monero_address'].includes(type)) return 'crypto';
+  return 'threat_intel';
+}
+
+export function categorizeExtractedIOCs(iocs: ExtractedIOC[]): {
+  hashes: ExtractedIOC[];
+  network: ExtractedIOC[];
+  files: ExtractedIOC[];
+  malwareArtifacts: ExtractedIOC[];
+  threatIntel: ExtractedIOC[];
+  crypto: ExtractedIOC[];
+} {
+  return {
+    hashes: iocs.filter((i) => i.category === 'hash' || ['sha256', 'sha1', 'md5', 'sha512', 'ssdeep', 'tlsh', 'file_hash'].includes(i.type)),
+    network: iocs.filter((i) => i.category === 'network' || ['ipv4', 'ipv6', 'domain', 'fqdn', 'url', 'email', 'port', 'protocol', 'dns_record', 'c2_indicator', 'asn', 'ja3', 'ja3s', 'cert_fingerprint'].includes(i.type)),
+    files: iocs.filter((i) => i.category === 'file' || ['windows_path', 'linux_path', 'filename', 'extension', 'registry_path', 'registry_key', 'mutex', 'named_pipe', 'scheduled_task', 'service_name'].includes(i.type)),
+    malwareArtifacts: iocs.filter((i) => i.category === 'malware_artifact' || ['pdb_path', 'embedded_url', 'campaign_id', 'config_indicator', 'encryption_key_artifact', 'cmdline_indicator', 'user_agent'].includes(i.type)),
+    threatIntel: iocs.filter((i) => i.category === 'threat_intel' || ['cve', 'attack_technique', 'attack_software', 'attack_group'].includes(i.type)),
+    crypto: iocs.filter((i) => i.category === 'crypto' || ['btc_address', 'monero_address'].includes(i.type)),
+  };
+}
 
 /**
  * Extract IOCs from one labeled block of text with full provenance and context-awareness.
@@ -404,9 +475,11 @@ function extractFromText(text: string, source: string): ExtractedIOC[] {
           value: rawValue,
           normalizedValue: normalizedValue !== rawValue ? normalizedValue : undefined,
           source,
-          location: source,
+          location: `${source} (line ${lineNumber})`,
           lineNumber,
           context,
+          category: inferCategory(det.type),
+          agent: 'ioc-extraction',
           confidence: Number(calibratedConfidence.toFixed(2)),
           role: roleInfo.role,
           roleEvidence: roleInfo.roleEvidence,

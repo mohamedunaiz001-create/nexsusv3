@@ -13,10 +13,15 @@ import {
   Paperclip,
   Trash2,
   ExternalLink,
+  CheckCircle2,
+  XCircle,
+  ShieldAlert,
+  GitCommit,
 } from "lucide-react";
 import { CaseItem, ActivityItem, StreamEvent, SpecialistAgent, EvidenceArtifact } from "../../types";
 import { PageShell, Panel, StatTile, Pill, severityTone } from "./PageShell";
 import { AgentCard } from "../command-center/AgentCard";
+import { correlateFindingsAcrossAgents, buildVerificationMatrix } from "../../utils/multiAgentAnalysis";
 
 const btn =
   "flex items-center gap-1.5 rounded-md border border-purple-500/40 bg-purple-500/10 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider text-purple-200 transition-colors hover:bg-purple-500/20";
@@ -775,6 +780,77 @@ export const InvestigationPage: React.FC<{
                                   ))}
                                 </div>
                               )}
+
+                              {/* Cross-Agent Correlation & Adversarial Verification */}
+                              {isExpanded && art.agentFindings && art.agentFindings.some((f) => f.status === "complete") && (() => {
+                                const correlations = correlateFindingsAcrossAgents(art, art.agentFindings || []);
+                                const verifications = buildVerificationMatrix(art, art.agentFindings || [], correlations);
+                                if (correlations.length === 0 && verifications.length === 0) return null;
+
+                                return (
+                                  <div className="mt-2.5 space-y-2 border-t border-purple-500/15 pt-2">
+                                    {correlations.length > 0 && (
+                                      <div className="rounded border border-cyan-500/20 bg-cyan-950/20 p-2">
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-mono text-[9px] uppercase tracking-wider text-cyan-300 font-semibold flex items-center gap-1">
+                                            <GitCommit className="h-3 w-3" /> Cross-Agent Correlation ({correlations.length})
+                                          </span>
+                                        </div>
+                                        <div className="mt-1.5 space-y-1.5">
+                                          {correlations.slice(0, 3).map((c) => (
+                                            <div key={c.id} className="rounded bg-black/40 p-1.5 border border-cyan-500/10">
+                                              <div className="flex items-center justify-between">
+                                                <span className="font-mono text-[9.5px] text-white font-medium truncate max-w-[200px]" title={c.indicatorOrClaim}>
+                                                  {c.indicatorOrClaim}
+                                                </span>
+                                                <span className={`text-[8px] font-mono px-1 py-0.5 rounded font-bold ${
+                                                  c.status === 'HIGH' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
+                                                  c.status === 'MEDIUM' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                                                  'bg-slate-500/20 text-slate-300 border border-slate-500/30'
+                                                }`}>
+                                                  {c.status} CONFIDENCE
+                                                </span>
+                                              </div>
+                                              <div className="mt-1 grid grid-cols-2 gap-1 text-[8px] font-mono">
+                                                {c.evidenceChecklist.map((chk, i) => (
+                                                  <div key={i} className={`flex items-center gap-1 ${chk.checked ? 'text-emerald-300' : 'text-slate-500'}`}>
+                                                    {chk.checked ? <CheckCircle2 className="h-2.5 w-2.5 shrink-0" /> : <XCircle className="h-2.5 w-2.5 shrink-0" />} {chk.label}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {verifications.length > 0 && (
+                                      <div className="rounded border border-purple-500/20 bg-purple-950/20 p-2">
+                                        <span className="font-mono text-[9px] uppercase tracking-wider text-purple-300 font-semibold flex items-center gap-1">
+                                          <ShieldAlert className="h-3 w-3 text-purple-400" /> Verification Matrix ({verifications.length})
+                                        </span>
+                                        <div className="mt-1.5 space-y-1">
+                                          {verifications.slice(0, 3).map((v, i) => (
+                                            <div key={i} className="flex items-start justify-between gap-2 rounded bg-black/40 p-1.5 border border-purple-500/10 text-[8.5px] font-mono">
+                                              <div className="min-w-0">
+                                                <p className="text-purple-200 truncate">{v.claim}</p>
+                                                <p className="text-purple-300/60 truncate">{v.sourceCheck} · {v.agentAgreement}</p>
+                                              </div>
+                                              <span className={`shrink-0 font-bold px-1 py-0.5 rounded text-[8px] ${
+                                                v.status === 'VERIFIED' ? 'text-emerald-300 bg-emerald-500/10 border border-emerald-500/30' :
+                                                v.status === 'CONTRADICTED' ? 'text-rose-300 bg-rose-500/10 border border-rose-500/30' :
+                                                'text-amber-300 bg-amber-500/10 border border-amber-500/30'
+                                              }`}>
+                                                {v.status}
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           )}
                         </div>

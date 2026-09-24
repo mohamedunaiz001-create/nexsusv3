@@ -6,6 +6,10 @@ import {
   generateFinding,
   getThreatIntelCandidates,
   initializeAgentFindings,
+  buildEvidencePackage,
+  correlateFindingsAcrossAgents,
+  buildVerificationMatrix,
+  compileInvestigationReport,
 } from './multiAgentAnalysis';
 import { INITIAL_AGENTS } from '../data/mockData';
 import { autoAssignAgent } from './autoAssignAgent';
@@ -167,5 +171,97 @@ describe('8 Specialist Agents Suite', () => {
     );
     expect(result.suggestedAgent.id).toBe('malware-analysis');
     expect(result.confidence).toBeGreaterThan(50);
+  });
+
+  it('buildEvidencePackage normalizes artifact into standard evidence contract', () => {
+    const pkg = buildEvidencePackage(testArtifact, 'CASE-TEST-101');
+    expect(pkg.investigation_id).toBe('CASE-TEST-101');
+    expect(pkg.evidence_id).toBe(testArtifact.id);
+    expect(pkg.file.name).toBe(testArtifact.name);
+    expect(pkg.available_artifacts.urls).toContain('http://malicious-c2.org/beacon.exe');
+    expect(pkg.available_artifacts.files).toContain('C:\\temp\\beacon.exe');
+  });
+
+  it('correlateFindingsAcrossAgents generates correlated findings with confidence checklist', () => {
+    const findings: AgentFinding[] = [
+      {
+        agentId: 'ioc-extraction',
+        agentName: 'IOC Extraction',
+        status: 'complete',
+        verdict: 'Malicious',
+        stepProgress: 100,
+        findings: [{ claim: 'C2 found', evidence: 'http://malicious-c2.org/beacon.exe', source: 'ioc', confidence: 0.9 }],
+      },
+      {
+        agentId: 'network-analysis',
+        agentName: 'Network Analysis',
+        status: 'complete',
+        verdict: 'Suspicious',
+        stepProgress: 100,
+        findings: [{ claim: 'Network connection primitive', evidence: 'http://malicious-c2.org/beacon.exe', source: 'network', confidence: 0.85 }],
+      },
+      {
+        agentId: 'threat-intel',
+        agentName: 'Threat Intelligence',
+        status: 'complete',
+        verdict: 'Malicious',
+        stepProgress: 100,
+        findings: [{ claim: 'Malicious reputation', evidence: 'Malicious C2 domain', source: 'virustotal', confidence: 0.9 }],
+      },
+    ];
+
+    const correlated = correlateFindingsAcrossAgents(testArtifact, findings);
+    expect(correlated.length).toBeGreaterThan(0);
+    const top = correlated[0];
+    expect(top.evidenceChecklist.length).toBe(4);
+    expect(top.status).toBeDefined();
+    expect(top.contributingAgents.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('buildVerificationMatrix challenges agent claims and flags contradictions', () => {
+    const findings: AgentFinding[] = [
+      {
+        agentId: 'malware-analysis',
+        agentName: 'Malware Analysis',
+        status: 'complete',
+        verdict: 'Malicious',
+        stepProgress: 100,
+        findings: [{ claim: 'Malicious dropper', evidence: 'Start-Process execution of beacon.exe', source: 'pe', confidence: 0.95 }],
+      },
+    ];
+
+    const matrix = buildVerificationMatrix(testArtifact, findings);
+    expect(matrix.length).toBeGreaterThan(0);
+    expect(matrix[0].status).toBe('VERIFIED');
+    expect(matrix[0].contradictionCheck).toContain('No contradiction');
+  });
+
+  it('compileInvestigationReport compiles an auditable investigation report', () => {
+    const findings: AgentFinding[] = [
+      {
+        agentId: 'malware-analysis',
+        agentName: 'Malware Analysis',
+        status: 'complete',
+        verdict: 'Malicious',
+        maliciousScore: 90,
+        stepProgress: 100,
+        summary: 'Payload detected',
+        findings: [{ claim: 'Dropper signature', evidence: 'Start-Process', source: 'ps1', confidence: 0.9 }],
+      },
+    ];
+
+    const report = compileInvestigationReport({
+      investigationId: 'inv-test-1',
+      title: 'PowerShell Dropper Triage',
+      caseNumber: 'INV-2026-001',
+      artifact: testArtifact,
+      findings,
+    });
+
+    expect(report.investigation_id).toBe('inv-test-1');
+    expect(report.caseNumber).toBe('INV-2026-001');
+    expect(report.evidencePackage).toBeDefined();
+    expect(report.categorizedIOCs).toBeDefined();
+    expect(report.recommendations.length).toBeGreaterThan(0);
   });
 });
