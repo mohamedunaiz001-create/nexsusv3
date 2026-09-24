@@ -20,6 +20,7 @@ describe('computeAggregateVerdict', () => {
     expect(computeAggregateVerdict([{ agentId: 'verification-agent', agentName: 'Verification', status: 'complete', stepProgress: 100 }])).toEqual({
       maliciousScore: 0,
       verdict: 'Unknown',
+      canonicalVerdict: 'analysis_unavailable',
     });
   });
 
@@ -27,7 +28,7 @@ describe('computeAggregateVerdict', () => {
     expect(computeAggregateVerdict([
       { agentId: 'malware-analysis', agentName: 'Malware', status: 'complete', stepProgress: 100, maliciousScore: 80 },
       { agentId: 'ioc-extraction', agentName: 'IOC', status: 'complete', stepProgress: 100, maliciousScore: 60 },
-    ])).toEqual({ maliciousScore: 70, verdict: 'Malicious' });
+    ])).toEqual({ maliciousScore: 70, verdict: 'Malicious', canonicalVerdict: 'malicious' });
   });
 });
 
