@@ -84,17 +84,28 @@ export const RecentCases: React.FC<RecentCasesProps> = ({
                 </div>
               </div>
 
-              <span className={`px-2 py-0.5 rounded text-[9px] font-bold shrink-0 ${
-                isInProgress 
-                  ? 'text-cyan-300 bg-cyan-950/70 border border-cyan-500/40 glow-purple-sm' 
-                  : isCompleted 
-                    ? 'text-emerald-300 bg-emerald-950/70 border border-emerald-500/40 glow-green' 
-                    : isHigh
-                      ? 'text-rose-300 bg-rose-950/70 border border-rose-500/40 glow-red'
-                      : 'text-teal-300 bg-teal-950/70 border border-teal-500/40'
-              }`}>
-                • {c.status}
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`flex items-center gap-1 text-[9.5px] font-bold ${
+                  isInProgress 
+                    ? 'text-cyan-300' 
+                    : isCompleted 
+                      ? 'text-emerald-400' 
+                      : isHigh
+                        ? 'text-rose-400'
+                        : 'text-amber-400'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    isInProgress 
+                      ? 'bg-cyan-400 animate-pulse' 
+                      : isCompleted 
+                        ? 'bg-emerald-400' 
+                        : isHigh
+                          ? 'bg-rose-400'
+                          : 'bg-amber-400'
+                  }`} />
+                  {c.status}
+                </span>
+              </div>
             </div>
           );
         })}

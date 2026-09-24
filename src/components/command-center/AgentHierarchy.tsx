@@ -19,6 +19,7 @@ import {
 import { SpecialistAgent } from '../../types';
 import { CustomAgentIcon } from '../common/CustomAgentIcon';
 import { AgentTelemetryModal } from '../modals/AgentTelemetryModal';
+import { AgentSparkline } from './AgentSparkline';
 
 interface AgentHierarchyProps {
   agents: SpecialistAgent[];
@@ -152,7 +153,7 @@ export const AgentHierarchy: React.FC<AgentHierarchyProps> = ({
       {/* 8 Agent Cards in Strict 8-Column Grid Layout with Fixed Width Ratio */}
       <div 
         className="grid gap-1.5 sm:gap-2 xl:gap-2.5 w-full overflow-x-auto pb-1 custom-scrollbar"
-        style={{ gridTemplateColumns: 'repeat(8, minmax(100px, 1fr))' }}
+        style={{ gridTemplateColumns: 'repeat(8, minmax(130px, 1fr))' }}
       >
         {agents.map((agent) => {
           const isActive = agent.status === 'ACTIVE';
@@ -176,24 +177,18 @@ export const AgentHierarchy: React.FC<AgentHierarchyProps> = ({
               {/* Card Top: Name & Role/Category */}
               <div className="text-center pb-1 sm:pb-1.5 border-b border-purple-500/15 w-full">
                 <div 
-                  className={`w-full font-mono font-bold text-white tracking-tight leading-tight group-hover:text-purple-200 min-h-[2.6em] sm:min-h-[2.8em] flex flex-wrap items-center justify-center text-center px-0.5 whitespace-normal break-words hyphens-auto overflow-visible [text-overflow:unset] ${
-                    agent.name.length > 17
-                      ? 'text-[7.5px] sm:text-[8px] md:text-[8.5px] xl:text-[9.5px]'
-                      : agent.name.length > 12
-                      ? 'text-[8.5px] sm:text-[9px] md:text-[9.5px] xl:text-[10.5px]'
-                      : 'text-[9px] sm:text-[9.5px] md:text-[10px] xl:text-[11px]'
-                  }`}
+                  className="w-full font-mono font-bold text-white tracking-tight leading-tight group-hover:text-purple-200 min-h-[2.4em] flex flex-wrap items-center justify-center text-center px-0.5 text-[9.5px] sm:text-[10px] xl:text-[11px]"
                   title={agent.name}
                 >
                   <span className="w-full break-words leading-tight">{agent.name.toUpperCase()}</span>
                 </div>
-                <div className="text-[7.5px] sm:text-[8px] xl:text-[8.5px] font-mono text-purple-300/80 truncate mt-0.5" title={agent.category}>
+                <div className="text-[8px] sm:text-[8.5px] font-mono text-purple-300/80 truncate mt-0.5" title={agent.category}>
                   {agent.category}
                 </div>
               </div>
 
-              {/* Card Center: Icon with Patrol-Path Scanning / Standby Fading Rings */}
-              <div className="py-1.5 sm:py-2 xl:py-2.5 flex flex-col items-center justify-center space-y-1.5 sm:space-y-2">
+              {/* Card Center: Icon with Patrol-Path Scanning */}
+              <div className="py-1.5 flex flex-col items-center justify-center space-y-1">
                 <div className="relative flex items-center justify-center">
                   {/* Fading Ring Patrol Radar Animations */}
                   {isActive ? (
@@ -239,25 +234,35 @@ export const AgentHierarchy: React.FC<AgentHierarchyProps> = ({
                   </div>
                 </div>
 
-                {/* Status Indicator Chip — only shown while actively patrolling */}
-                {isActive && (
-                  <div className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                    <span className="text-[8.5px] sm:text-[9px] xl:text-[9.5px] font-mono font-bold text-emerald-300">
-                      PATROL
-                    </span>
-                  </div>
-                )}
+                {/* Status Indicator Chip */}
+                <div className="flex items-center gap-1 pt-0.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-400 animate-ping' : 'bg-purple-400'}`} />
+                  <span className={`text-[8.5px] sm:text-[9px] font-mono font-bold ${isActive ? 'text-emerald-300' : 'text-purple-300/80'}`}>
+                    {isActive ? 'ACTIVE' : 'STANDBY'}
+                  </span>
+                </div>
               </div>
 
-              {/* Card Bottom: Progress Bar & Telemetry Modal Trigger */}
-              <div className="space-y-1 sm:space-y-1.5 pt-1 sm:pt-1.5 border-t border-purple-500/15">
-                <div className="flex items-center justify-between text-[8px] sm:text-[8.5px] xl:text-[9px] font-mono text-purple-300/80">
+              {/* Model & Task Info */}
+              <div className="py-1 px-1 rounded-lg bg-[#0b0417]/80 border border-purple-500/15 space-y-0.5 text-[8px] sm:text-[8.5px] font-mono">
+                <div className="flex items-center justify-between text-purple-300/80 truncate">
+                  <span className="text-purple-400">Model:</span>
+                  <span className="text-white font-medium truncate ml-1">{agent.model.replace('gemini-', 'Gemini ').replace('gpt-', 'GPT-')}</span>
+                </div>
+                <div className="text-purple-300/80 truncate">
+                  <span className="text-purple-400">Task: </span>
+                  <span className="text-slate-200 truncate" title={agent.currentTask}>{agent.currentTask}</span>
+                </div>
+              </div>
+
+              {/* Card Bottom: Progress Bar, Sparkline & Telemetry Trigger */}
+              <div className="space-y-1 sm:space-y-1.5 pt-1.5 border-t border-purple-500/15">
+                <div className="flex items-center justify-between text-[8px] sm:text-[8.5px] font-mono text-purple-300/80">
                   <span>Cycle</span>
                   <span className="font-bold text-white">{agent.progress}%</span>
                 </div>
                 
-                <div className="w-full h-1 sm:h-1.5 rounded-full bg-[#1b0d38] border border-purple-500/30 overflow-hidden">
+                <div className="w-full h-1 rounded-full bg-[#1b0d38] border border-purple-500/30 overflow-hidden">
                   <div 
                     className={`h-full transition-all duration-500 ${
                       isActive 
@@ -268,6 +273,11 @@ export const AgentHierarchy: React.FC<AgentHierarchyProps> = ({
                   />
                 </div>
 
+                {/* Mini Real-Time Sparkline */}
+                <div className="w-full h-4.5 rounded bg-[#090317] border border-purple-500/20 overflow-hidden flex items-center justify-center p-0.5">
+                  <AgentSparkline agentId={agent.id} isActive={isActive} type="cpu" />
+                </div>
+
                 {/* On-Demand Telemetry Popover Button */}
                 <button
                   type="button"
@@ -276,7 +286,7 @@ export const AgentHierarchy: React.FC<AgentHierarchyProps> = ({
                     e.stopPropagation();
                     setTelemetryAgent(agent);
                   }}
-                  className="w-full mt-0.5 py-0.5 sm:py-1 px-1 rounded-lg bg-[#180c33] hover:bg-purple-900/50 border border-purple-500/30 hover:border-purple-400/60 text-[8px] sm:text-[8.5px] font-mono text-purple-200 hover:text-white flex items-center justify-center gap-0.5 sm:gap-1 transition-all group/btn"
+                  className="w-full py-0.5 px-1 rounded-lg bg-[#180c33] hover:bg-purple-900/50 border border-purple-500/30 hover:border-purple-400/60 text-[8px] sm:text-[8.5px] font-mono text-purple-200 hover:text-white flex items-center justify-center gap-1 transition-all group/btn"
                   title="View live terminal logs and system diagnostics"
                 >
                   <Terminal className="w-2.5 h-2.5 text-purple-400 group-hover/btn:text-cyan-300 shrink-0" />
@@ -300,3 +310,4 @@ export const AgentHierarchy: React.FC<AgentHierarchyProps> = ({
     </div>
   );
 };
+

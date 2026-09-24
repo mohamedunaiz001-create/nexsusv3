@@ -164,7 +164,7 @@ export interface MissionData {
   delegatedBy: string;
   description: string;
   phases?: MissionPhase[];
-  stages?: { name: string; status: string }[];
+  stages?: { id?: string; name: string; status: string; assignedAgent?: string; details?: string }[];
 }
 
 export interface ActivityEvent {
@@ -176,6 +176,9 @@ export interface ActivityEvent {
   agentId?: string;
   action: string;
   type?: 'delegation' | 'ioc' | 'intel' | 'network' | 'report' | 'malware' | 'alert' | string;
+  status?: string;
+  target?: string;
+  iconName?: string;
 }
 
 export type ActivityItem = ActivityEvent;
@@ -185,8 +188,11 @@ export interface IOCItem {
   value: string;
   type: 'IP' | 'Domain' | 'File Hash' | 'URL' | 'CVE' | string;
   severity: 'Malicious' | 'Suspicious' | 'Clean' | 'Unknown' | string;
+  threatLevel?: string;
   confidence: number;
   firstSeen: string;
+  source?: string;
+  context?: string;
   threatActor?: string;
   asn?: string;
   country?: string;
@@ -199,10 +205,17 @@ export interface CaseItem {
   title: string;
   status: 'In Progress' | 'Completed' | 'High' | 'Low' | 'Investigating' | string;
   severity: 'Critical' | 'High' | 'Medium' | 'Low' | string;
-  timestamp: string;
+  priority?: string;
+  category?: string;
+  timestamp?: string;
+  createdAt?: string;
   assignedAgent: string;
-  iocCount: number;
-  confidence: number;
+  iocCount?: number;
+  iocsCount?: number;
+  confidence?: number;
+  summary?: string;
+  affectedSystems?: number;
+  tags?: string[];
 }
 
 export interface AIProvider {
@@ -239,6 +252,8 @@ export interface GraphNode {
   type: 'case' | 'malware' | 'ip' | 'domain' | 'actor' | 'cve' | 'campaign' | string;
   x?: number;
   y?: number;
+  radius?: number;
+  color?: string;
 }
 
 export interface GraphEdge {
