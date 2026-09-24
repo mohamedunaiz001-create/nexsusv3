@@ -1,0 +1,17 @@
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+python-server/.venv/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal

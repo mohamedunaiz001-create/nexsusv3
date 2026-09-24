@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^Push-Location python-server; python -m pytest tests; Pop-Location$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
