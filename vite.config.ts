@@ -8,7 +8,9 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, './src'),
+        'next/link': path.resolve(__dirname, './src/lib/next-link.tsx'),
+        'next/navigation': path.resolve(__dirname, './src/lib/next-navigation.ts'),
       },
     },
     build: {
@@ -36,6 +38,9 @@ export default defineConfig(() => {
       },
     },
     server: {
+      host: '0.0.0.0',
+      port: 3000,
+      allowedHosts: true,
       // HMR can be disabled with DISABLE_HMR=true.
       // Do not modify -- file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
@@ -58,28 +63,17 @@ export default defineConfig(() => {
           '**/python-server/**',
           '**/python-server/data/**',
           '**/python-server/.venv/**',
+          '**/backend/**',
+          '**/server.py',
           '**/*.sqlite',
           '**/*.sqlite-wal',
           '**/*.sqlite-shm',
         ],
       },
-      // Proxy API calls to the Python (FastAPI) backend, which runs as a
-      // separate process in development. See python-server/README.md.
-      //
-      // IMPORTANT: `configure` attaches an error handler on the proxy.
-      // Without it, if the Python backend isn't running (or drops a
-      // connection mid-request — e.g. during a file/sample upload), the
-      // underlying http-proxy module emits an unhandled 'error' event that
-      // CRASHES the whole Vite dev server process. If anything supervises
-      // and restarts Vite on crash, the browser's HMR websocket reconnects
-      // to the fresh instance and does a full page reload — wiping every
-      // bit of in-memory React state (uploaded evidence, cases, etc. all
-      // revert to the mock initial data) even though nothing in the React
-      // code itself did anything wrong. This turns that hard crash into an
-      // ordinary failed fetch the app's existing try/catch already handles.
+      // Proxy API calls to the Python backend
       proxy: {
         '/api': {
-          target: process.env.PY_API_URL || 'http://localhost:8000',
+          target: process.env.PY_API_URL || 'http://127.0.0.1:5005',
           changeOrigin: true,
           configure: (proxy) => {
             proxy.on('error', (err, _req, res) => {
