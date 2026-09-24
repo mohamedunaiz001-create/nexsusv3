@@ -283,3 +283,5 @@ export function calculateAutoAssignment(
     rankedCandidates: ranked
   };
 }
+
+export const autoAssignAgent = calculateAutoAssignment;

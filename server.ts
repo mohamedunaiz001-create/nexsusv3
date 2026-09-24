@@ -40,8 +40,11 @@ const INITIAL_TOOLS = [
     allowedHosts: ['www.virustotal.com'],
     authType: 'api_key_header',
     authConfigured: true,
+    connected: true,
     enabled: true,
-    health: { status: 'HEALTHY', latencyMs: 46, lastChecked: new Date().toISOString() },
+    allowedAgents: ['threat-intel', 'ioc-extraction', 'network-analysis', 'malware-analysis'],
+    enabledCapabilities: ['hash.lookup', 'ip.lookup', 'domain.lookup', 'url.lookup'],
+    health: { status: 'HEALTHY' as const, latencyMs: 46, lastChecked: new Date().toISOString() },
     capabilities: [
       { id: 'hash.lookup', label: 'Hash Lookup', description: 'SHA256/SHA1/MD5 verdict + engine detections' },
       { id: 'ip.lookup', label: 'IP Lookup', description: 'IP reputation, ASN, and related detections' },
@@ -64,8 +67,11 @@ const INITIAL_TOOLS = [
     allowedHosts: ['otx.alienvault.com'],
     authType: 'api_key_header',
     authConfigured: true,
+    connected: true,
     enabled: true,
-    health: { status: 'HEALTHY', latencyMs: 62, lastChecked: new Date().toISOString() },
+    allowedAgents: ['threat-intel', 'network-analysis'],
+    enabledCapabilities: ['ip.lookup', 'domain.lookup', 'threat.lookup'],
+    health: { status: 'HEALTHY' as const, latencyMs: 62, lastChecked: new Date().toISOString() },
     capabilities: [
       { id: 'ip.lookup', label: 'IP Lookup', description: 'IP reputation and associated pulses' },
       { id: 'domain.lookup', label: 'Domain Lookup', description: 'Domain reputation and associated pulses' },
@@ -87,8 +93,11 @@ const INITIAL_TOOLS = [
     allowedHosts: ['api.shodan.io'],
     authType: 'api_key',
     authConfigured: true,
+    connected: true,
     enabled: true,
-    health: { status: 'HEALTHY', latencyMs: 84, lastChecked: new Date().toISOString() },
+    allowedAgents: ['threat-intel', 'network-analysis'],
+    enabledCapabilities: ['host.lookup', 'ip.lookup', 'port.lookup'],
+    health: { status: 'HEALTHY' as const, latencyMs: 84, lastChecked: new Date().toISOString() },
     capabilities: [
       { id: 'host.lookup', label: 'Host Lookup', description: 'Open ports, banners, vulnerabilities, and host metadata' },
       { id: 'ip.lookup', label: 'IP Lookup', description: 'Summary of open services on an IP' },
@@ -110,8 +119,11 @@ const INITIAL_TOOLS = [
     allowedHosts: ['api.abuseipdb.com'],
     authType: 'api_key_header',
     authConfigured: true,
+    connected: true,
     enabled: true,
-    health: { status: 'HEALTHY', latencyMs: 51, lastChecked: new Date().toISOString() },
+    allowedAgents: ['threat-intel', 'network-analysis'],
+    enabledCapabilities: ['ip.reputation', 'ip.lookup', 'ip.report'],
+    health: { status: 'HEALTHY' as const, latencyMs: 51, lastChecked: new Date().toISOString() },
     capabilities: [
       { id: 'ip.reputation', label: 'IP Reputation', description: 'Abuse confidence score (0-100%) and report count' },
       { id: 'ip.lookup', label: 'IP Lookup', description: 'Detailed abuse reports by category' },
@@ -126,16 +138,22 @@ const INITIAL_TOOLS = [
 
 const inMemoryTools = [...INITIAL_TOOLS];
 
-const inMemoryLogs = [
+const inMemoryLogs: any[] = [
   {
     id: 'log-1',
     toolId: 'virustotal',
     toolName: 'VirusTotal',
+    action: 'hash.lookup',
     capabilityId: 'hash.lookup',
     targetIndicator: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-    status: 'SUCCESS' as const,
+    requestedBy: 'IOC Extraction',
+    caseId: 'CASE-2024-017',
+    status: 'SUCCESS',
+    verdict: 'clean',
     durationMs: 78,
+    latencyMs: 78,
     timestamp: new Date(Date.now() - 1000 * 60 * 12).toLocaleTimeString(),
+    createdAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
     resultSummary: 'Score 0/72 (Clean known empty hash)',
     agentId: 'ioc-extraction',
   },
@@ -143,11 +161,17 @@ const inMemoryLogs = [
     id: 'log-2',
     toolId: 'otx',
     toolName: 'AlienVault OTX',
+    action: 'ip.lookup',
     capabilityId: 'ip.lookup',
     targetIndicator: '185.220.101.5',
-    status: 'SUCCESS' as const,
+    requestedBy: 'Network Analysis',
+    caseId: 'CASE-2024-017',
+    status: 'SUCCESS',
+    verdict: 'suspicious',
     durationMs: 112,
+    latencyMs: 112,
     timestamp: new Date(Date.now() - 1000 * 60 * 8).toLocaleTimeString(),
+    createdAt: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
     resultSummary: '14 pulses matched (Tor exit relay / scanner node)',
     agentId: 'network-analysis',
   },
@@ -155,11 +179,17 @@ const inMemoryLogs = [
     id: 'log-3',
     toolId: 'abuseipdb',
     toolName: 'AbuseIPDB',
+    action: 'ip.reputation',
     capabilityId: 'ip.reputation',
     targetIndicator: '194.26.29.112',
-    status: 'SUCCESS' as const,
+    requestedBy: 'Threat Intel',
+    caseId: 'CASE-2024-017',
+    status: 'SUCCESS',
+    verdict: 'malicious',
     durationMs: 65,
+    latencyMs: 65,
     timestamp: new Date(Date.now() - 1000 * 60 * 3).toLocaleTimeString(),
+    createdAt: new Date(Date.now() - 1000 * 60 * 3).toISOString(),
     resultSummary: 'Confidence 100% (SSH brute-force / scanning)',
     agentId: 'threat-intel',
   },
@@ -560,6 +590,82 @@ app.get('/api/tools', (_req: Request, res: Response) => {
   });
 });
 
+app.get('/api/tools/logs', (_req: Request, res: Response) => {
+  res.json({ success: true, logs: inMemoryLogs });
+});
+
+app.get('/api/tools/logs/recent', (req: Request, res: Response) => {
+  const toolId = req.query.toolId as string | undefined;
+  const filtered = toolId ? inMemoryLogs.filter((l) => l.toolId === toolId) : inMemoryLogs;
+  res.json({ success: true, logs: filtered });
+});
+
+app.post('/api/tools/execute', (req: Request, res: Response) => {
+  const { action, indicatorValue, requestedByAgent, caseId } = req.body;
+  const val = String(indicatorValue || '').trim();
+  const act = String(action || '');
+
+  // Select tool based on action
+  let toolId = 'virustotal';
+  let toolName = 'VirusTotal';
+  if (act === 'ip.reputation') {
+    toolId = 'abuseipdb';
+    toolName = 'AbuseIPDB';
+  } else if (act.startsWith('ip.')) {
+    toolId = 'otx';
+    toolName = 'AlienVault OTX';
+  } else if (act.startsWith('host.') || act.startsWith('port.')) {
+    toolId = 'shodan';
+    toolName = 'Shodan';
+  }
+
+  // Determine reputation verdict
+  const isSuspicious = /c2|cobalt|tor|beacon|malware|botnet|lockbit|185\.220|194\.26/i.test(val);
+  const verdict = isSuspicious ? 'malicious' : 'clean';
+  const confidence = isSuspicious ? 92 : 12;
+  const latencyMs = Math.floor(Math.random() * 50) + 35;
+
+  const result = {
+    tool: toolName,
+    action: act,
+    verdict,
+    confidence,
+    findings: [
+      {
+        detail: isSuspicious
+          ? `Flagged in ${toolName} intelligence feed: associated with malicious adversary activity`
+          : `Clean indicator: no malicious detections in ${toolName} database`,
+      },
+    ],
+  };
+
+  const newLog = {
+    id: `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    toolId,
+    toolName,
+    action: act,
+    capabilityId: act,
+    targetIndicator: val,
+    requestedBy: requestedByAgent || 'threat-intel',
+    caseId: caseId || 'CASE-2024-017',
+    status: 'SUCCESS',
+    verdict,
+    durationMs: latencyMs,
+    latencyMs,
+    timestamp: new Date().toLocaleTimeString(),
+    createdAt: new Date().toISOString(),
+    resultSummary: `${verdict.toUpperCase()} (${confidence}% confidence) via ${toolName}`,
+    agentId: requestedByAgent || 'threat-intel',
+  };
+
+  inMemoryLogs.unshift(newLog);
+
+  res.json({
+    success: true,
+    result,
+  });
+});
+
 app.post('/api/tools/:id/toggle', (req: Request, res: Response) => {
   const id = String(req.params.id);
   const tool = inMemoryTools.find((t) => t.id === id);
@@ -570,26 +676,88 @@ app.post('/api/tools/:id/toggle', (req: Request, res: Response) => {
   res.json({ success: true, tool });
 });
 
+app.post('/api/tools/:id/enable', (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const tool = inMemoryTools.find((t) => t.id === id);
+  if (!tool) {
+    return res.status(404).json({ success: false, error: 'Tool not found' });
+  }
+  tool.enabled = true;
+  res.json({ success: true, tool });
+});
+
+app.post('/api/tools/:id/disable', (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const tool = inMemoryTools.find((t) => t.id === id);
+  if (!tool) {
+    return res.status(404).json({ success: false, error: 'Tool not found' });
+  }
+  tool.enabled = false;
+  res.json({ success: true, tool });
+});
+
+app.post('/api/tools/:id/connect', (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const tool = inMemoryTools.find((t) => t.id === id);
+  if (!tool) {
+    return res.status(404).json({ success: false, error: 'Tool not found' });
+  }
+  tool.connected = true;
+  tool.enabled = true;
+  tool.authConfigured = true;
+  tool.health = {
+    status: 'HEALTHY',
+    latencyMs: Math.floor(Math.random() * 40) + 30,
+    lastChecked: new Date().toISOString(),
+  };
+  res.json({ success: true, tool });
+});
+
+app.delete('/api/tools/:id', (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const tool = inMemoryTools.find((t) => t.id === id);
+  if (!tool) {
+    return res.status(404).json({ success: false, error: 'Tool not found' });
+  }
+  tool.connected = false;
+  tool.authConfigured = false;
+  tool.enabled = false;
+  res.json({ success: true, tool });
+});
+
+app.put('/api/tools/:id/permissions', (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const tool = inMemoryTools.find((t) => t.id === id);
+  if (!tool) {
+    return res.status(404).json({ success: false, error: 'Tool not found' });
+  }
+  const { allowedAgents, enabledCapabilities } = req.body;
+  if (Array.isArray(allowedAgents)) tool.allowedAgents = allowedAgents;
+  if (Array.isArray(enabledCapabilities)) tool.enabledCapabilities = enabledCapabilities;
+  res.json({ success: true, tool });
+});
+
 app.post('/api/tools/:id/test', (req: Request, res: Response) => {
   const id = String(req.params.id);
   const tool = inMemoryTools.find((t) => t.id === id);
   if (!tool) {
     return res.status(404).json({ success: false, error: 'Tool not found' });
   }
+  const latencyMs = Math.floor(Math.random() * 40) + 30;
   tool.health = {
     status: 'HEALTHY',
-    latencyMs: Math.floor(Math.random() * 40) + 30,
+    latencyMs,
     lastChecked: new Date().toISOString(),
   };
   res.json({
     success: true,
-    message: `${tool.name} API gateway test successful. Authenticated & responsive.`,
-    latencyMs: tool.health.latencyMs,
+    test: {
+      ok: true,
+      message: `${tool.name} API gateway test successful. Authenticated & responsive.`,
+      latencyMs,
+    },
+    latencyMs,
   });
-});
-
-app.get('/api/tools/logs', (_req: Request, res: Response) => {
-  res.json({ success: true, logs: inMemoryLogs });
 });
 
 // ---------------------------------------------------------------------------
