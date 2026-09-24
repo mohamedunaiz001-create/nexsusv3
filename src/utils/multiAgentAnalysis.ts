@@ -86,7 +86,7 @@ function investigationRelationships(artifact: EvidenceArtifact, iocs = extractIO
   const profile = buildArtifactEvidenceProfile(artifact);
   const relationships: string[] = [];
   const hasUrlOrDomain = iocs.some((ioc) => ioc.type === 'url' || ioc.type === 'domain');
-  const hasPayload = iocs.some((ioc) => ioc.type === 'file_path' || /\.exe\b|\.dll\b|payload|dropper/i.test(ioc.value));
+  const hasPayload = iocs.some((ioc) => ioc.type === 'windows_path' || ioc.type === 'linux_path' || /\.exe\b|\.dll\b|payload|dropper/i.test(ioc.value));
   if (hasUrlOrDomain && profile.hasDownloadPrimitive) {
     relationships.push('Download-capable command/API is associated with an extracted URL or domain.');
   }

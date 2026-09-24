@@ -35,7 +35,14 @@ export default defineConfig(() => {
         },
       },
     },
+    preview: {
+      host: '0.0.0.0',
+      port: 3000,
+    },
     server: {
+      host: '0.0.0.0',
+      port: 3000,
+      allowedHosts: true,
       // HMR can be disabled with DISABLE_HMR=true.
       // Do not modify -- file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',

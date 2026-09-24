@@ -32,6 +32,17 @@ export interface AgentFinding {
   evidenceCoverage?: number;
   /** Separate from maliciousScore: quality of the evidence supporting the finding. */
   evidenceQuality?: 'LOW' | 'MEDIUM' | 'HIGH';
+  /** Explicit reason and evidence audit when an investigation domain is not applicable */
+  notApplicableReason?: {
+    reason: string;
+    evidenceAvailable: Record<string, string | number>;
+  };
+  familyCandidates?: MalwareFamilyCandidate[];
+  recommendations?: string[];
+  limitations?: string[];
+  techniques?: string[];
+  extractedIOCs?: ExtractedIOC[];
+  structuredEvidence?: Record<string, any>;
 }
 
 export interface EvidenceArtifact {
@@ -70,6 +81,16 @@ export interface EvidenceArtifact {
    */
   malwareIntelSample?: MalwareSample | null;
   pcapAnalysis?: PcapAnalysis | null;
+  /** Interactive multi-agent investigation evidence graph */
+  evidenceGraph?: {
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+  };
+  evidenceProvenance?: {
+    totalSignals: number;
+    activeSignals: string[];
+    fusionWeights: Record<string, number>;
+  };
 }
 
 export type AgentStatus = 'ACTIVE' | 'IDLE' | 'BUSY' | 'OFFLINE' | 'ANALYZING';
@@ -342,6 +363,12 @@ export interface MalwarePeSection {
   entropy: number;
 }
 
+export interface MalwareFamilyCandidate {
+  family: string;
+  confidence: number;
+  supportingEvidence: string[];
+}
+
 export interface MalwareStaticFeatures {
   sha256: string;
   sha1: string;
@@ -363,6 +390,34 @@ export interface MalwareStaticFeatures {
   peImportedDlls?: Record<string, string[]> | null;
   /** Subset of peImportedDlls actually on the suspicious-API watchlist — confirmed-import evidence, stronger than a string-scan hit. */
   peSuspiciousImportedApis?: string[];
+  // Expanded PE/ELF Structural Features
+  architecture?: string | null;
+  subsystem?: string | null;
+  entryPointRva?: number | null;
+  imageBase?: number | null;
+  rwxSections?: string[];
+  sectionPermissions?: Record<string, { read: boolean; write: boolean; execute: boolean }>;
+  sectionSizeAnomalies?: string[];
+  virtualRawRatio?: number;
+  importCount?: number;
+  dllCount?: number;
+  suspiciousApiCount?: number;
+  ordinalImportCount?: number;
+  exportCount?: number;
+  tlsCallbacks?: boolean;
+  debugDirectory?: boolean;
+  resourceCount?: number;
+  versionInfo?: Record<string, string>;
+  digitalSignature?: { present: boolean; valid?: boolean; subject?: string; issuer?: string };
+  overlaySize?: number;
+  richHeader?: boolean;
+  packerIndicators?: string[];
+  timestampAnomalies?: string[];
+  entropyAnalysis?: {
+    overall: number;
+    highEntropy: boolean;
+    assessment: string;
+  };
 }
 
 export interface MalwareRuleMatch {
@@ -380,11 +435,15 @@ export interface MalwareSimilarityMatch {
   family?: string | null;
   label?: 'malicious' | 'benign' | null;
   score: number;
+  overallSimilarity?: number;
   contentSimilarity?: number;
   iocSimilarity?: number;
   networkSimilarity?: number;
   behaviorSimilarity?: number;
   structureSimilarity?: number;
+  importSimilarity?: number;
+  stringSimilarity?: number;
+  sectionSimilarity?: number;
 }
 
 export interface MalwareVerdictResult {
@@ -399,6 +458,9 @@ export interface MalwareVerdictResult {
   ruleMatches: MalwareRuleMatch[];
   similarSamples: MalwareSimilarityMatch[];
   likelyFamily?: string | null;
+  familyCandidates?: MalwareFamilyCandidate[];
+  fusionWeights?: Record<string, number>;
+  entropyAssessment?: string;
 }
 
 export interface MalwareSample {
@@ -507,6 +569,21 @@ export interface MalwareModelVersion {
   numBenign: number;
   trainedBy: string;
   createdAt: string;
+  // Multi-metric evaluation and dataset partitioning
+  precision?: number;
+  recall?: number;
+  f1Score?: number;
+  specificity?: number;
+  falsePositiveRate?: number;
+  falseNegativeRate?: number;
+  rocAuc?: number;
+  prAuc?: number;
+  confusionMatrix?: { tp: number; fp: number; tn: number; fn: number };
+  splits?: { train: number; validation: number; test: number };
+  modelId?: string;
+  featureSchemaVersion?: string;
+  ruleSetVersion?: string;
+  knowledgeBaseVersion?: string;
 }
 
 export interface MalwareIntelStats {
@@ -522,15 +599,24 @@ export interface MalwareIntelStats {
   modelVersion: number | null;
   modelTrainAccuracy: number | null;
   modelTrainingSamples: number;
+  // Live metric tracking
+  precision?: number | null;
+  recall?: number | null;
+  f1Score?: number | null;
+  rocAuc?: number | null;
 }
 // --- Real IOC extraction (src/utils/iocExtraction.ts) ----------------------
 // Every value here is pattern-matched out of actual artifact text (names,
 // preview content, malware-intel string findings) — never randomly
 // generated. See iocExtraction.ts for the detectors.
 export type ExtractedIOCType =
-  | 'sha256' | 'sha1' | 'md5'
-  | 'ipv4' | 'ipv6' | 'domain' | 'url' | 'email'
-  | 'cve' | 'attack_technique' | 'registry_path' | 'file_path';
+  | 'sha256' | 'sha1' | 'md5' | 'sha512'
+  | 'ipv4' | 'ipv6' | 'domain' | 'fqdn' | 'url' | 'email'
+  | 'btc_address' | 'monero_address'
+  | 'windows_path' | 'linux_path'
+  | 'registry_path' | 'registry_key' | 'mutex' | 'named_pipe'
+  | 'cert_fingerprint' | 'ja3' | 'ja3s' | 'user_agent' | 'asn'
+  | 'cve' | 'attack_technique' | 'attack_software' | 'attack_group' | 'file_hash';
 
 export interface ExtractedIOC {
   type: ExtractedIOCType;
@@ -542,4 +628,9 @@ export interface ExtractedIOC {
   context?: string;
   /** 0-1. Regex-shape confidence, not a threat-intel reputation score. */
   confidence: number;
+  /** Semantic role inferred from surrounding context */
+  role?: 'c2' | 'exfiltration' | 'download_staging' | 'payload_drop' | 'phishing' | 'persistence' | 'execution' | 'reconnaissance' | 'legitimate_ref' | 'informational';
+  roleEvidence?: string;
+  firstSeen?: string;
+  lastSeen?: string;
 }
