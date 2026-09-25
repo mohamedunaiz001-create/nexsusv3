@@ -80,14 +80,59 @@ function defangForScanning(text: string): string {
     .replace(/\[@\]|\(@\)/gi, '@');
 }
 
-function contextAround(text: string, value: string): { lineNumber: number; context: string } {
+function contextAround(text: string, value: string): { lineNumber: number; offset: string; context: string } {
   const idx = text.indexOf(value);
-  if (idx === -1) return { lineNumber: 1, context: '' };
+  if (idx === -1) return { lineNumber: 1, offset: '0x0000', context: '' };
   const before = text.slice(Math.max(0, idx - 120), idx);
   const after = text.slice(idx + value.length, idx + value.length + 120);
   const lineNumber = text.slice(0, idx).split(/\r?\n/).length;
+  const offset = `0x${idx.toString(16).toUpperCase().padStart(4, '0')}`;
   const snippet = `${before}${value}${after}`.replace(/\s+/g, ' ').trim();
-  return { lineNumber, context: snippet.length > 0 ? snippet : value };
+  return { lineNumber, offset, context: snippet.length > 0 ? snippet : value };
+}
+
+function isPrintableAscii(str: string): boolean {
+  if (!str || str.length < 4) return false;
+  let printable = 0;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if ((code >= 32 && code <= 126) || code === 9 || code === 10 || code === 13) {
+      printable++;
+    }
+  }
+  return printable / str.length >= 0.85;
+}
+
+function tryDecodeBase64(b64: string): { utf8?: string; utf16le?: string } {
+  try {
+    const clean = b64.trim().replace(/[\r\n\s]/g, '');
+    if (clean.length < 16 || clean.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(clean)) {
+      return {};
+    }
+    // Attempt standard atob / Buffer decode
+    let rawBinary = '';
+    if (typeof Buffer !== 'undefined') {
+      const buf = Buffer.from(clean, 'base64');
+      const utf8 = buf.toString('utf8');
+      const utf16le = buf.toString('utf16le');
+      return {
+        utf8: isPrintableAscii(utf8) && (utf8.includes('http') || utf8.includes('.') || utf8.includes('/') || utf8.includes('powershell')) ? utf8 : undefined,
+        utf16le: isPrintableAscii(utf16le) && (utf16le.includes('http') || utf16le.includes('.') || utf16le.includes('/') || utf16le.includes('powershell')) ? utf16le : undefined,
+      };
+    } else {
+      rawBinary = atob(clean);
+      const bytes = new Uint8Array(rawBinary.length);
+      for (let i = 0; i < rawBinary.length; i++) bytes[i] = rawBinary.charCodeAt(i);
+      const utf8 = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      const utf16le = new TextDecoder('utf-16le', { fatal: false }).decode(bytes);
+      return {
+        utf8: isPrintableAscii(utf8) && (utf8.includes('http') || utf8.includes('.') || utf8.includes('/') || utf8.includes('powershell')) ? utf8 : undefined,
+        utf16le: isPrintableAscii(utf16le) && (utf16le.includes('http') || utf16le.includes('.') || utf16le.includes('/') || utf16le.includes('powershell')) ? utf16le : undefined,
+      };
+    }
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -332,10 +377,10 @@ const DETECTORS: Detector[] = [
     confidence: 0.9,
   },
 
-  // Mutexes (Windows Named Mutexes)
+  // Mutexes (Windows Named Mutexes & Common Malware Mutex Names)
   {
     type: 'mutex',
-    re: /\b(?:Global\\|Local\\)[A-Za-z0-9_.\-{}]{4,64}\b/g,
+    re: /\b(?:Global\\|Local\\)[A-Za-z0-9_.\-{}]{4,64}\b|\b(?:Mutex_[A-Za-z0-9_]+|[A-Za-z0-9_]+_Mutex|ZoneTransfer_Mutex)\b/g,
     confidence: 0.95,
   },
 
@@ -351,6 +396,40 @@ const DETECTORS: Detector[] = [
     type: 'registry_path',
     re: /\bHK(?:EY_)?(?:LOCAL_MACHINE|LM|CURRENT_USER|CU|CLASSES_ROOT|USERS)\\[^\s"'<>|]+/gi,
     confidence: 0.95,
+  },
+
+  // C2 Addresses (Host:Port or IPv4:Port combinations)
+  {
+    type: 'c2_address',
+    re: /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+(?:com|net|org|io|co|ru|cn|info|biz|xyz|top|club|online|site|dev|app|to|cc|pro|live):[1-9][0-9]{1,4}\b|\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d):[1-9][0-9]{1,4}\b/gi,
+    confidence: 0.94,
+    validate: (v) => {
+      const parts = v.split(':');
+      if (parts.length !== 2) return false;
+      const port = parseInt(parts[1], 10);
+      return port >= 1 && port <= 65535;
+    },
+  },
+
+  // PowerShell Explicit Execution Cradles & Commands
+  {
+    type: 'powershell_cmd',
+    re: /\b(?:powershell(?:\.exe)?\s+[^\r\n;]+|(?:Invoke-WebRequest|Invoke-Expression|IEX|DownloadString|DownloadFile|Start-Process|New-Object\s+Net\.WebClient)[^\r\n;]+)\b/gi,
+    confidence: 0.93,
+  },
+
+  // Shell & Administrative Evasion Commands
+  {
+    type: 'shell_cmd',
+    re: /\b(?:vssadmin(?:\.exe)?\s+delete\s+shadows[^\r\n;]*|bcdedit[^\r\n;]*recoveryenabled\s+No|chmod\s+\+x\s+[^\r\n;]+|bash\s+-i\s+>&[^\r\n;]+|nc\s+(?:-e|-c)\s+[^\r\n;]+|certutil(?:\.exe)?\s+-urlcache[^\r\n;]*)\b/gi,
+    confidence: 0.95,
+  },
+
+  // Certificate Information & Thumbprints
+  {
+    type: 'cert_info',
+    re: /\b(?:ServerCertificateValidationCallback|Thumbprint\s*[:=]\s*[a-fA-F0-9]{40}|CN=[a-zA-Z0-9._\s-]+|O=[a-zA-Z0-9._\s-]+)\b/gi,
+    confidence: 0.90,
   },
 
   // Scheduled Tasks & Services
@@ -433,7 +512,7 @@ const DETECTORS: Detector[] = [
   // User-Agent Strings
   {
     type: 'user_agent',
-    re: /\b(?:Mozilla\/5\.0\s*\([^)]+\)\s*[^\r\n]{10,80}|curl\/\d+\.\d+(?:\.\d+)?|Wget\/\d+\.\d+(?:\.\d+)?|python-requests\/\d+\.\d+)\b/gi,
+    re: /\b(?:Mozilla\/5\.0\s*\([^)]+\)\s*[^\r\n]{5,80}|curl\/\d+\.\d+(?:\.\d+)?|Wget\/\d+\.\d+(?:\.\d+)?|python-requests\/\d+\.\d+)\b/gi,
     confidence: 0.88,
   },
 
@@ -448,9 +527,9 @@ const DETECTORS: Detector[] = [
 
 export function inferCategory(type: ExtractedIOCType): ExtractedIOC['category'] {
   if (['sha256', 'sha1', 'md5', 'sha512', 'ssdeep', 'tlsh', 'file_hash'].includes(type)) return 'hash';
-  if (['ipv4', 'ipv6', 'domain', 'fqdn', 'url', 'email', 'port', 'protocol', 'dns_record', 'c2_indicator', 'asn', 'ja3', 'ja3s', 'cert_fingerprint'].includes(type)) return 'network';
+  if (['ipv4', 'ipv6', 'domain', 'fqdn', 'url', 'email', 'port', 'protocol', 'dns_record', 'c2_indicator', 'c2_address', 'asn', 'ja3', 'ja3s', 'cert_fingerprint', 'cert_info'].includes(type)) return 'network';
   if (['windows_path', 'linux_path', 'filename', 'extension', 'registry_path', 'registry_key', 'mutex', 'named_pipe', 'scheduled_task', 'service_name'].includes(type)) return 'file';
-  if (['pdb_path', 'embedded_url', 'campaign_id', 'config_indicator', 'encryption_key_artifact', 'cmdline_indicator', 'user_agent'].includes(type)) return 'malware_artifact';
+  if (['pdb_path', 'embedded_url', 'embedded_domain', 'campaign_id', 'config_indicator', 'encryption_key_artifact', 'cmdline_indicator', 'powershell_cmd', 'shell_cmd', 'encoded_string', 'user_agent'].includes(type)) return 'malware_artifact';
   if (['cve', 'attack_technique', 'attack_software', 'attack_group'].includes(type)) return 'threat_intel';
   if (['btc_address', 'monero_address'].includes(type)) return 'crypto';
   return 'threat_intel';
@@ -466,18 +545,19 @@ export function categorizeExtractedIOCs(iocs: ExtractedIOC[]): {
 } {
   return {
     hashes: iocs.filter((i) => i.category === 'hash' || ['sha256', 'sha1', 'md5', 'sha512', 'ssdeep', 'tlsh', 'file_hash'].includes(i.type)),
-    network: iocs.filter((i) => i.category === 'network' || ['ipv4', 'ipv6', 'domain', 'fqdn', 'url', 'email', 'port', 'protocol', 'dns_record', 'c2_indicator', 'asn', 'ja3', 'ja3s', 'cert_fingerprint'].includes(i.type)),
+    network: iocs.filter((i) => i.category === 'network' || ['ipv4', 'ipv6', 'domain', 'fqdn', 'url', 'email', 'port', 'protocol', 'dns_record', 'c2_indicator', 'c2_address', 'asn', 'ja3', 'ja3s', 'cert_fingerprint', 'cert_info'].includes(i.type)),
     files: iocs.filter((i) => i.category === 'file' || ['windows_path', 'linux_path', 'filename', 'extension', 'registry_path', 'registry_key', 'mutex', 'named_pipe', 'scheduled_task', 'service_name'].includes(i.type)),
-    malwareArtifacts: iocs.filter((i) => i.category === 'malware_artifact' || ['pdb_path', 'embedded_url', 'campaign_id', 'config_indicator', 'encryption_key_artifact', 'cmdline_indicator', 'user_agent'].includes(i.type)),
+    malwareArtifacts: iocs.filter((i) => i.category === 'malware_artifact' || ['pdb_path', 'embedded_url', 'embedded_domain', 'campaign_id', 'config_indicator', 'encryption_key_artifact', 'cmdline_indicator', 'powershell_cmd', 'shell_cmd', 'encoded_string', 'user_agent'].includes(i.type)),
     threatIntel: iocs.filter((i) => i.category === 'threat_intel' || ['cve', 'attack_technique', 'attack_software', 'attack_group'].includes(i.type)),
     crypto: iocs.filter((i) => i.category === 'crypto' || ['btc_address', 'monero_address'].includes(i.type)),
   };
 }
 
 /**
- * Extract IOCs from one labeled block of text with full provenance and context-awareness.
+ * Extract IOCs from one labeled block of text with full provenance, offset calculation,
+ * recursive encoded string decoding, and context-awareness.
  */
-function extractFromText(text: string, source: string): ExtractedIOC[] {
+function extractFromText(text: string, source: string, recursionDepth = 0): ExtractedIOC[] {
   if (!text) return [];
   const out: ExtractedIOC[] = [];
   const scanTexts = [text];
@@ -491,7 +571,7 @@ function extractFromText(text: string, source: string): ExtractedIOC[] {
       while ((match = det.re.exec(scanText)) !== null) {
         const rawValue = match[0];
         const normalizedValue = normalizeDefangedValue(rawValue);
-        const { lineNumber, context } = contextAround(scanText, rawValue);
+        const { lineNumber, offset, context } = contextAround(scanText, rawValue);
 
         if (det.validate && !det.validate(normalizedValue || rawValue, context)) continue;
 
@@ -499,13 +579,14 @@ function extractFromText(text: string, source: string): ExtractedIOC[] {
         const roleInfo = inferRoleAndEvidence(context, det.type);
         const calibratedConfidence = Math.max(0.1, Math.min(1.0, det.confidence + roleInfo.confidenceAdjustment));
 
-        const initialLocation = `${source} (line ${lineNumber})`;
+        const initialLocation = `${source} (line ${lineNumber}, offset ${offset})`;
         out.push({
           type: det.type,
           value: rawValue,
           normalizedValue: normalizedValue !== rawValue ? normalizedValue : undefined,
           source,
           location: initialLocation,
+          offset,
           lineNumber,
           context,
           category: inferCategory(det.type),
@@ -517,7 +598,47 @@ function extractFromText(text: string, source: string): ExtractedIOC[] {
           occurrences: 1,
           locations: [initialLocation],
         });
-        if (out.length > 500) return out;
+        if (out.length > 500) break;
+      }
+    }
+  }
+
+  // Recursive decoding for Base64 encoded payload strings (e.g. PowerShell -enc, cradles, or embedded blobs)
+  if (recursionDepth < 2) {
+    const b64Regex = /(?:-enc(?:odedcommand)?\s+)?([A-Za-z0-9+/]{16,}={0,2})(?=$|[\s"';,)>\]])/gi;
+    let b64Match: RegExpExecArray | null;
+    while ((b64Match = b64Regex.exec(text)) !== null) {
+      const b64Val = b64Match[1];
+      const decoded = tryDecodeBase64(b64Val);
+      const { lineNumber, offset } = contextAround(text, b64Val);
+
+      // Record the encoded string indicator itself
+      out.push({
+        type: 'encoded_string',
+        value: b64Val.length > 60 ? `${b64Val.slice(0, 57)}...` : b64Val,
+        source: `${source} (encoded base64)`,
+        location: `${source} (line ${lineNumber}, offset ${offset})`,
+        offset,
+        lineNumber,
+        context: `Base64 encoded block (${b64Val.length} chars)`,
+        category: 'malware_artifact',
+        agent: 'ioc-extraction',
+        confidence: 0.9,
+        role: 'payload_drop',
+        roleEvidence: 'Encoded executable payload or cradle string',
+        firstSeen: new Date().toISOString(),
+        occurrences: 1,
+        locations: [`${source} (line ${lineNumber}, offset ${offset})`],
+      });
+
+      const decodedPayload = decoded.utf8 || decoded.utf16le;
+      if (decodedPayload) {
+        const nestedIOCs = extractFromText(
+          decodedPayload,
+          `decoded payload (base64) from ${source} line ${lineNumber}`,
+          recursionDepth + 1,
+        );
+        out.push(...nestedIOCs);
       }
     }
   }

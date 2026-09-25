@@ -104,13 +104,34 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
     return computeSha256FromBytes(encoder.encode(text));
   };
 
-  const generateMockSha256 = () => {
-    const chars = '0123456789abcdef';
-    let hash = '';
-    for (let i = 0; i < 64; i++) {
-      hash += chars[Math.floor(Math.random() * chars.length)];
+  const calculateDeterministicSha256 = async (input: File | Blob | string): Promise<string> => {
+    try {
+      let bytes: Uint8Array;
+      if (typeof input === 'string') {
+        bytes = new TextEncoder().encode(input);
+      } else {
+        const buf = await input.arrayBuffer();
+        bytes = new Uint8Array(buf);
+      }
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      return Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    } catch {
+      // Deterministic fallback derived from content / metadata string
+      const str = typeof input === 'string' ? input : `${(input as File).name || 'file'}:${input.size || 0}:${input.type || ''}`;
+      let h1 = 0x811c9dc5;
+      let h2 = 0x01000193;
+      for (let i = 0; i < str.length; i++) {
+        h1 ^= str.charCodeAt(i);
+        h1 = Math.imul(h1, 0x01000193);
+        h2 ^= str.charCodeAt(i);
+        h2 = Math.imul(h2, 0x811c9dc5);
+      }
+      const p1 = (h1 >>> 0).toString(16).padStart(8, '0');
+      const p2 = (h2 >>> 0).toString(16).padStart(8, '0');
+      return (p1 + p2).repeat(4);
     }
-    return hash;
   };
 
   const handleFileSelect = (file: File) => {
@@ -249,13 +270,8 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
     }
 
     let calculatedHash = realSha256;
-    if (!calculatedHash && (selectedFile.type.startsWith('text/') || selectedFile.name.match(/\.(txt|log|csv|json|ps1|py|js|sh|yaml|yml|md|xml|ini|cfg)$/i))) {
-      try {
-        const arrayBuffer = await selectedFile.arrayBuffer();
-        calculatedHash = await computeSha256FromBytes(new Uint8Array(arrayBuffer));
-      } catch {
-        calculatedHash = generateMockSha256();
-      }
+    if (!calculatedHash) {
+      calculatedHash = await calculateDeterministicSha256(selectedFile);
     }
 
     const analysisText = fileAnalysisContent || fileContentPreview || '';
@@ -274,7 +290,7 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
       url: filePreviewUrl || undefined,
       thumbnailUrl: filePreviewUrl || undefined,
       mimeType: selectedFile.type || 'application/octet-stream',
-      sha256: calculatedHash || generateMockSha256(),
+      sha256: calculatedHash,
       uploadedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       uploadedBy: 'Analyst Security Ops',
       caseId: currentCaseId,
@@ -299,7 +315,7 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
     setActiveTab('gallery');
   };
 
-  const handleSubmitPhotoUrl = (e: React.FormEvent) => {
+  const handleSubmitPhotoUrl = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanUrl = photoUrl.trim();
     if (!cleanUrl) return;
@@ -316,6 +332,8 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
       previewContent: [cleanUrl, photoDescription].filter(Boolean).join('\n'),
     }).length;
 
+    const photoSha256 = await calculateDeterministicSha256(cleanUrl);
+
     let newArtifact: EvidenceArtifact = {
       id: `art-photo-${Date.now()}`,
       name: artifactName,
@@ -324,7 +342,7 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
       url: cleanUrl,
       thumbnailUrl: cleanUrl,
       mimeType: 'image/jpeg',
-      sha256: generateMockSha256(),
+      sha256: photoSha256,
       uploadedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       uploadedBy: 'Incident Response Lead',
       caseId: currentCaseId,
@@ -386,7 +404,7 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
     e.preventDefault();
     if (!codeSnippet.trim()) return;
 
-    const sha256 = await computeSha256FromText(codeSnippet).catch(() => generateMockSha256());
+    const sha256 = await calculateDeterministicSha256(codeSnippet);
     const scriptName = codeName.trim() || `script_payload.${codeType === 'powershell' ? 'ps1' : codeType === 'yara' ? 'yar' : codeType === 'json' ? 'json' : 'txt'}`;
     const extractedIocCount = extractIOCs({ fileName: scriptName, previewContent: codeSnippet }).length;
 

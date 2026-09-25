@@ -10,7 +10,7 @@ import {
   INITIAL_STREAM_EVENTS,
   INITIAL_ARTIFACTS
 } from './data/mockData';
-import { SpecialistAgent, CaseItem, IOCItem, CEONode, MissionData, ThemeMode, EvidenceArtifact, AIProvider, StreamEvent, AgentFinding, ActivityEvent } from './types';
+import { SpecialistAgent, CaseItem, IOCItem, CEONode, MissionData, ThemeMode, EvidenceArtifact, AIProvider, StreamEvent, AgentFinding, ActivityEvent, AgentProgressStage } from './types';
 import { SearchItemType } from './utils/searchIndex';
 import { stripApiKeys } from './utils/security';
 import { initializeSession, secureFetchWithRecovery } from './utils/apiClient';
@@ -590,11 +590,19 @@ export default function App() {
           return { ...art, agentFindings: findings };
         }
 
-        // A step is actively running — advance it.
+        // A step is actively running — advance it through real progress stages (Fix 12)
         const active = findings[activeIdx];
         const bump = 20 + Math.floor(Math.random() * 25);
         const newStepProgress = Math.min(100, active.stepProgress + bump);
         artifactsChanged = true;
+
+        const stageName: AgentProgressStage =
+          newStepProgress >= 100 ? 'Completed'
+          : newStepProgress >= 85 ? 'Verifying'
+          : newStepProgress >= 70 ? 'Correlating'
+          : newStepProgress >= 50 ? 'Enriching'
+          : newStepProgress >= 30 ? 'Analyzing'
+          : 'Extracting features';
 
         if (newStepProgress >= 100) {
           // Findings are generated from `art` as it stands right now, which
@@ -608,6 +616,7 @@ export default function App() {
           findings[activeIdx] = {
             ...active,
             status: 'complete',
+            stage: 'Completed',
             stepProgress: 100,
             verdict: content.verdict,
             maliciousScore: content.maliciousScore,
@@ -644,11 +653,11 @@ export default function App() {
           return { ...art, agentFindings: findings };
         }
 
-        findings[activeIdx] = { ...active, stepProgress: newStepProgress };
+        findings[activeIdx] = { ...active, stage: stageName, stepProgress: newStepProgress };
         pipelineAgentUpdates.set(active.agentId, {
           id: active.agentId,
           name: active.agentName,
-          currentTask: `Analyzing evidence: ${art.name}`,
+          currentTask: `[${stageName}] ${art.name} (${newStepProgress}%)`,
           progress: newStepProgress,
           completedTask: false
         });

@@ -7,40 +7,63 @@ export type CanonicalVerdict =
   | 'unknown'
   | 'analysis_unavailable';
 
+export type EvidenceNature = 'OBSERVED' | 'INFERRED' | 'CONFIRMED' | 'UNAVAILABLE' | 'DIRECT' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNVERIFIED';
+
+export type AgentProgressStage =
+  | 'Queued'
+  | 'Initializing'
+  | 'Extracting features'
+  | 'Analyzing'
+  | 'Enriching'
+  | 'Correlating'
+  | 'Verifying'
+  | 'Completed'
+  | 'Failed';
+
 /**
  * A single evidence-backed sub-finding: never a bare verdict. Every claim
- * an agent makes should be traceable to where it came from and how
- * confident that specific claim is — see multiAgentAnalysis.ts.
+ * an agent makes is traceable to its source, location, context, and confidence.
  */
 export interface EvidenceFinding {
   claim: string;
   evidence: string;
   source: string;
   confidence: number; // 0-1
-  evidenceType?: 'DIRECT' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFERRED' | 'UNVERIFIED';
-  context?: string;
+  evidenceType?: EvidenceNature;
+  location?: string; // e.g. "offset 0x18A2 (line 14)"
+  context?: string; // surrounding text snippet
+  relatedArtifact?: string;
   limitation?: string;
+  externalEnrichment?: {
+    tool: string;
+    verdict: string;
+    confidence: number;
+    detail: string;
+    latencyMs?: number;
+    status: 'SUCCESS' | 'UNAVAILABLE' | 'FAILED';
+  };
 }
 
 export interface AgentFinding {
   agentId: string;
   agentName: string;
-  status: 'pending' | 'analyzing' | 'complete';
+  status: 'pending' | 'analyzing' | 'complete' | 'failed';
+  stage?: AgentProgressStage;
   stepProgress: number;
-  verdict?: 'Malicious' | 'Suspicious' | 'Safe' | 'Informational' | 'Insufficient Evidence' | 'Not Applicable' | CanonicalVerdict;
+  verdict?: 'Malicious' | 'Suspicious' | 'Safe' | 'Informational' | 'Insufficient Evidence' | 'Not Applicable' | 'Unavailable' | CanonicalVerdict;
   canonicalVerdict?: CanonicalVerdict;
   maliciousScore?: number;
   summary?: string;
   completedAt?: string;
-  /** Evidence trail this verdict was derived from — claim + supporting evidence + provenance + confidence per item. Empty/absent when the agent had no real evidence source to draw from (see 'Insufficient Evidence' / 'Not Applicable' verdicts). */
+  /** Evidence trail this verdict was derived from — claim + supporting evidence + provenance + confidence per item. */
   findings?: EvidenceFinding[];
-  /** What's missing that would raise confidence, or what would change the verdict — real analyst reasoning rather than a silent gap. */
+  /** What's missing that would raise confidence, or what would change the verdict. */
   evidenceGaps?: string[];
   /** Fraction of expected evidence categories that were available to this agent. */
   evidenceCoverage?: number;
   /** Separate from maliciousScore: quality of the evidence supporting the finding. */
   evidenceQuality?: 'LOW' | 'MEDIUM' | 'HIGH';
-  /** Explicit reason and evidence audit when an investigation domain is not applicable */
+  /** Explicit reason and evidence audit when an investigation domain is not applicable or unavailable */
   notApplicableReason?: {
     reason: string;
     evidenceAvailable: Record<string, string | number>;
@@ -703,7 +726,7 @@ export interface VerificationItem {
   agentAgreement: string;
   contradictionCheck: string;
   confidence: number;
-  status: 'VERIFIED' | 'UNVERIFIED' | 'CONTRADICTED';
+  status: 'SUPPORTED' | 'CONTRADICTED' | 'INSUFFICIENT EVIDENCE' | 'UNAVAILABLE' | 'VERIFIED' | 'UNVERIFIED';
   evaluatedAt: string;
 }
 
@@ -726,6 +749,7 @@ export interface InvestigationReport {
   completedAt?: string;
   executiveSummary: string;
   verdict: 'Malicious' | 'Suspicious' | 'Clean' | 'Unknown';
+  canonicalVerdict?: CanonicalVerdict;
   confidence: number;
   evidencePackage: EvidencePackage;
   categorizedIOCs: {
@@ -741,6 +765,18 @@ export interface InvestigationReport {
   evidenceGaps: string[];
   recommendations: string[];
   timeline: InvestigationAuditLog[];
+  familyAttribution?: {
+    family?: string;
+    status: 'CONFIRMED' | 'SUSPECTED' | 'UNCONFIRMED' | 'UNKNOWN';
+    rationale: string;
+  };
+  toolAttributions?: Array<{
+    tool: string;
+    action: string;
+    verdict: string;
+    latencyMs?: number;
+    status: 'SUCCESS' | 'UNAVAILABLE' | 'FAILED';
+  }>;
 }
 // --- Real IOC extraction (src/utils/iocExtraction.ts) ----------------------
 // Every value here is pattern-matched out of actual artifact text (names,
@@ -748,12 +784,13 @@ export interface InvestigationReport {
 // generated. See iocExtraction.ts for the detectors.
 export type ExtractedIOCType =
   | 'sha256' | 'sha1' | 'md5' | 'sha512' | 'ssdeep' | 'tlsh' | 'file_hash'
-  | 'ipv4' | 'ipv6' | 'domain' | 'fqdn' | 'url' | 'email' | 'port' | 'protocol' | 'dns_record' | 'c2_indicator'
+  | 'ipv4' | 'ipv6' | 'domain' | 'fqdn' | 'url' | 'email' | 'port' | 'protocol' | 'dns_record' | 'c2_indicator' | 'c2_address'
   | 'btc_address' | 'monero_address'
   | 'windows_path' | 'linux_path' | 'filename' | 'extension'
   | 'registry_path' | 'registry_key' | 'mutex' | 'named_pipe' | 'scheduled_task' | 'service_name'
-  | 'cert_fingerprint' | 'ja3' | 'ja3s' | 'user_agent' | 'asn'
-  | 'pdb_path' | 'embedded_url' | 'campaign_id' | 'config_indicator' | 'encryption_key_artifact' | 'cmdline_indicator'
+  | 'cert_fingerprint' | 'cert_info' | 'ja3' | 'ja3s' | 'user_agent' | 'asn'
+  | 'pdb_path' | 'embedded_url' | 'embedded_domain' | 'campaign_id' | 'config_indicator' | 'encryption_key_artifact'
+  | 'cmdline_indicator' | 'powershell_cmd' | 'shell_cmd' | 'encoded_string'
   | 'cve' | 'attack_technique' | 'attack_software' | 'attack_group';
 
 export interface ExtractedIOC {
@@ -762,6 +799,7 @@ export interface ExtractedIOC {
   normalizedValue?: string;
   source: string;
   location?: string;
+  offset?: string;
   lineNumber?: number;
   context?: string;
   category?: 'hash' | 'network' | 'file' | 'malware_artifact' | 'threat_intel' | 'crypto';
@@ -775,4 +813,11 @@ export interface ExtractedIOC {
   lastSeen?: string;
   occurrences?: number;
   locations?: string[];
+  externalEnrichment?: {
+    tool: string;
+    verdict: string;
+    confidence: number;
+    detail: string;
+    status: 'SUCCESS' | 'UNAVAILABLE' | 'FAILED';
+  };
 }

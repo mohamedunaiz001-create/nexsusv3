@@ -59,4 +59,57 @@ describe('extractIOCs', () => {
     expect(categorized.files.length).toBeGreaterThan(0);
     expect(categorized.malwareArtifacts.length).toBeGreaterThan(0);
   });
+
+  it('identifies all 12+ real IOCs across all categories with exact provenance and offsets', () => {
+    // UTF-16LE encoded 'http://hidden-c2.net:8080/stage' in base64:
+    // "aAB0AHQAcAA6AC8ALwBoAGkAZABkAGUAbgAtAGMAMgAuAG4AZQB0ADoAOAAwADgAMAAvAHMAdABhAGcAZQA="
+    const multiIocText = [
+      '// Sample Analysis Artifact',
+      'IP: 185.220.101.44',
+      'Domain: update-windows-defender.online',
+      'URL: https://update-windows-defender.online/en/check.php',
+      'Contact: operator@darknet-nexus.org',
+      'MD5: ecbcf7d19e3f6fede32321aaebf6547f',
+      'SHA256: 5f428e084fe4097d9fd2fcb8f4869065ebc9aa9c62be552819ef8559f9f083ff',
+      'Payload Path: C:\\Windows\\Temp\\beacon_x64.dll',
+      'Persistence: HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\WinDefenderUpdate',
+      'Named Mutex: Global\\ZoneTransfer_Mutex',
+      'C2 Socket: c2-relay-vault.darknet-nexus.org:8443',
+      'Listening Port: port 8443',
+      'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) CobaltStrike/4.8',
+      'Evasion: vssadmin.exe delete shadows /all /quiet',
+      'Cert: ServerCertificateValidationCallback CN=Microsoft Corporation',
+      'Cradle: powershell -nop -w hidden -enc aAB0AHQAcAA6AC8ALwBoAGkAZABkAGUAbgAtAGMAMgAuAG4AZQB0ADoAOAAwADgAMAAvAHMAdABhAGcAZQA=',
+    ].join('\n');
+
+    const iocs = extractIOCs({
+      fileName: 'stager_script.ps1',
+      previewContent: multiIocText,
+    });
+
+    const types = iocs.map((i) => i.type);
+    expect(types).toContain('ipv4');
+    expect(types).toContain('domain');
+    expect(types).toContain('url');
+    expect(types).toContain('email');
+    expect(types).toContain('md5');
+    expect(types).toContain('sha256');
+    expect(types).toContain('windows_path');
+    expect(types).toContain('registry_path');
+    expect(types).toContain('mutex');
+    expect(types).toContain('c2_address');
+    expect(types).toContain('port');
+    expect(types).toContain('user_agent');
+    expect(types).toContain('shell_cmd');
+    expect(types).toContain('cert_info');
+    expect(types).toContain('powershell_cmd');
+
+    // Also verify that the decoded payload within the base64 cradle was extracted!
+    const decodedUrl = iocs.find((i) => (i.normalizedValue || i.value).includes('hidden-c2.net'));
+    expect(decodedUrl).toBeDefined();
+
+    // Verify all IOCs carry provenance and hex offset
+    expect(iocs.every((i) => !!i.location && i.location.includes('offset 0x'))).toBe(true);
+    expect(iocs.length).toBeGreaterThanOrEqual(12);
+  });
 });
